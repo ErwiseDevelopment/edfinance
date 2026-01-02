@@ -263,8 +263,8 @@ $cartoes = $stmt_cartoes->fetchAll();
     
     // IMPORTANTE: Ajuste aqui se seus arquivos AJAX estiverem em outro lugar
     // Como está rodando via index.php na pasta public, o caminho relativo geralmente é direto
-    const AJAX_META_URL = 'ajax_check_meta.php'; 
-    const AJAX_CAT_URL  = 'ajax_rapido_categoria.php';
+    const AJAX_CAT_URL = 'index.php?pg=ajax_rapido_categoria'; // <--- CORREÇÃO AQUI
+    const AJAX_META_URL = 'index.php?pg=ajax_check_meta';      // <--- CORREÇÃO AQUI
 
     let tomCategoria, tomCartao;
     const inputData = document.getElementById('contavencimento');

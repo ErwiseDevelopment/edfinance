@@ -68,8 +68,8 @@ if(isset($_GET['msg']) && $_GET['msg'] == 'replicado') {
     $msg_type = "primary";
 }
 
-// --- BUSCAR DADOS (QUERY AJUSTADA) ---
-// Agora filtra estritamente por contacompetencia = :mes
+// --- BUSCAR DADOS (QUERY AJUSTADA COM LÓGICA DE FATURA) ---
+// Usamos COALESCE(competenciafatura, contacompetencia) para respeitar o mês da fatura
 $stmt = $pdo->prepare("
     SELECT 
         c.categoriaid, 
@@ -80,7 +80,7 @@ $stmt = $pdo->prepare("
          WHERE categoriaid = c.categoriaid 
          AND usuarioid = :uid 
          AND contatipo = 'Saída' 
-         AND contacompetencia = :mes 
+         AND COALESCE(competenciafatura, contacompetencia) = :mes 
         ) as gasto_real
     FROM categorias c
     LEFT JOIN categorias_metas m ON c.categoriaid = m.categoriaid AND m.competencia = :mes
