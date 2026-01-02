@@ -4,7 +4,7 @@ if (!defined('APP_PATH')) exit;
 
 $uid = $_SESSION['usuarioid'];
 
-// Mensagem Flash (Feedback de Sucesso/Erro)
+// Mensagem Flash
 $mensagem = "";
 if (isset($_SESSION['mensagem_flash'])) {
     $msg = $_SESSION['mensagem_flash'];
@@ -14,7 +14,7 @@ if (isset($_SESSION['mensagem_flash'])) {
     unset($_SESSION['mensagem_flash']); unset($_SESSION['tipo_flash']);
 }
 
-// Lista Cartões do Banco de Dados
+// Lista Cartões
 $stmt = $pdo->prepare("SELECT * FROM cartoes WHERE usuarioid = ? ORDER BY cartonome ASC");
 $stmt->execute([$uid]);
 $cartoes = $stmt->fetchAll();
@@ -34,7 +34,6 @@ $cartoes = $stmt->fetchAll();
     .color-options-grid { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-bottom: 20px; }
     .color-radio { display: none; } 
     .color-circle { width: 40px; height: 40px; border-radius: 50%; cursor: pointer; border: 3px solid transparent; transition: all 0.2s; position: relative; }
-    /* Efeito ao selecionar */
     .color-radio:checked + .color-circle { transform: scale(1.1); border-color: white; box-shadow: 0 0 0 2px #1e293b; }
     
     .empty-state { border: 2px dashed #e2e8f0; border-radius: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; color: #94a3b8; cursor: pointer; transition: 0.2s; min-height: 200px; background: #f8fafc; }
@@ -119,31 +118,46 @@ $cartoes = $stmt->fetchAll();
                     <div class="mb-3 text-center">
                         <label class="form-label small fw-bold text-muted mb-3">COR DO CARTÃO</label>
                         <div class="color-options-grid">
-                            <label title="Black / C6 / XP / Nomad">
+                            <label title="Black / Infinite">
                                 <input type="radio" name="cor" value="#1e293b" class="color-radio" checked>
                                 <div class="color-circle" style="background: #1e293b;"></div>
                             </label>
-                            <label title="Nubank / Vivo">
+
+                            <label title="Prata / Platinum">
+                                <input type="radio" name="cor" value="#64748b" class="color-radio">
+                                <div class="color-circle" style="background: #64748b;"></div>
+                            </label>
+                            
+                            <label title="Gold / Ouro">
+                                <input type="radio" name="cor" value="#d4af37" class="color-radio">
+                                <div class="color-circle" style="background: #d4af37;"></div>
+                            </label>
+
+                            <label title="Azul Claro / Elo">
+                                <input type="radio" name="cor" value="#0ea5e9" class="color-radio">
+                                <div class="color-circle" style="background: #0ea5e9;"></div>
+                            </label>
+                            <label title="Nubank / Roxo">
                                 <input type="radio" name="cor" value="#820ad1" class="color-radio">
                                 <div class="color-circle" style="background: #820ad1;"></div>
                             </label>
-                            <label title="Inter / BMG">
+                            <label title="Inter / Laranja">
                                 <input type="radio" name="cor" value="#ff7a00" class="color-radio">
                                 <div class="color-circle" style="background: #ff7a00;"></div>
                             </label>
-                            <label title="Santander / Bradesco">
+                            <label title="Vermelho">
                                 <input type="radio" name="cor" value="#cc092f" class="color-radio">
                                 <div class="color-circle" style="background: #cc092f;"></div>
                             </label>
-                            <label title="Itaú / Caixa / Azul">
+                            <label title="Azul Escuro">
                                 <input type="radio" name="cor" value="#005aa5" class="color-radio">
                                 <div class="color-circle" style="background: #005aa5;"></div>
                             </label>
-                            <label title="PicPay / Next / Sicredi">
+                            <label title="Verde">
                                 <input type="radio" name="cor" value="#00b46e" class="color-radio">
                                 <div class="color-circle" style="background: #00b46e;"></div>
                             </label>
-                            <label title="Rappi / Outros">
+                            <label title="Rosa">
                                 <input type="radio" name="cor" value="#d63384" class="color-radio">
                                 <div class="color-circle" style="background: #d63384;"></div>
                             </label>
@@ -169,20 +183,10 @@ $cartoes = $stmt->fetchAll();
                             <option value="C6 Bank">
                             <option value="XP Investimentos">
                             <option value="PicPay">
-                            <option value="PagBank">
-                            <option value="Banco do Brasil">
-                            <option value="BTG Pactual">
-                            <option value="Nomad">
-                            <option value="Wise">
-                            <option value="Neon">
-                            <option value="Next">
-                            <option value="Sofisa">
-                            <option value="Sicredi">
-                            <option value="Sicoob">
-                            <option value="Mercado Pago">
-                            <option value="Porto Seguro">
-                            <option value="Azul Infinite">
-                            <option value="Latam Pass">
+                            <option value="Ourocard">
+                            <option value="Elo">
+                            <option value="Visa Platinum">
+                            <option value="Mastercard Black">
                         </datalist>
                     </div>
 
@@ -213,30 +217,22 @@ $cartoes = $stmt->fetchAll();
 
 <script>
     // --- LÓGICA DE CORES INTELIGENTE ---
-    // Mapeia palavras-chave para as cores hexadecimais dos inputs radio
     const mapaCores = {
-        // ROXO
-        'nubank': '#820ad1', 'nu ': '#820ad1', 'vivo': '#820ad1', 'easynvest': '#820ad1',
-        
-        // LARANJA
+        // NOVAS CORES:
+        'prata': '#64748b', 'silver': '#64748b', 'platinum': '#64748b',
+        'gold': '#d4af37', 'ouro': '#d4af37', 'dourado': '#d4af37',
+        'azul claro': '#0ea5e9', 'elo': '#0ea5e9', 'digio': '#0ea5e9', 'credisphere': '#0ea5e9',
+
+        // CORES ANTIGAS:
+        'nubank': '#820ad1', 'nu ': '#820ad1', 'vivo': '#820ad1',
         'inter': '#ff7a00', 'bmg': '#ff7a00', 'shopee': '#ff7a00',
-        
-        // VERMELHO
-        'santander': '#cc092f', 'bradesco': '#cc092f', 'claro': '#cc092f', 'americanas': '#cc092f',
-        
-        // AZUL
+        'santander': '#cc092f', 'bradesco': '#cc092f', 'claro': '#cc092f',
         'itaú': '#005aa5', 'itau': '#005aa5', 'caixa': '#005aa5', 'azul': '#005aa5', 
-        'porto': '#005aa5', 'credicard': '#005aa5', 'btg': '#005aa5', 'bb': '#005aa5', 'brasil': '#005aa5',
-        
-        // VERDE
+        'porto': '#005aa5', 'bb': '#005aa5', 'brasil': '#005aa5',
         'picpay': '#00b46e', 'stone': '#00b46e', 'pagbank': '#00b46e', 'next': '#00b46e',
-        'sicredi': '#00b46e', 'sicoob': '#00b46e', 'unicred': '#00b46e', 'neon': '#00b46e',
-        
-        // PRETO/CINZA (Padrão para Cartões Black/Infinite ou bancos digitais sóbrios)
+        'sicredi': '#00b46e', 'neon': '#00b46e',
         'c6': '#1e293b', 'xp': '#1e293b', 'black': '#1e293b', 'infinite': '#1e293b', 
-        'nomad': '#1e293b', 'wise': '#1e293b', 'avenue': '#1e293b', 'carbon': '#1e293b', 'ultravioleta': '#1e293b',
-        
-        // ROSA
+        'nomad': '#1e293b', 'wise': '#1e293b', 'carbon': '#1e293b',
         'rappi': '#d63384'
     };
 
@@ -244,18 +240,16 @@ $cartoes = $stmt->fetchAll();
         if(!texto) return;
         const nome = texto.toLowerCase();
 
-        // Verifica cada chave do mapa
         for (const [chave, corHex] of Object.entries(mapaCores)) {
             if (nome.includes(chave)) {
                 const radio = document.querySelector(`input[name="cor"][value="${corHex}"]`);
                 if (radio) {
                     radio.checked = true;
-                    // Pequena animação para mostrar que o sistema escolheu
                     const circulo = radio.parentElement.querySelector('.color-circle');
                     circulo.style.transform = "scale(0.9)";
                     setTimeout(() => circulo.style.transform = "", 150);
                 }
-                break; // Para na primeira correspondência
+                break;
             }
         }
     }
@@ -273,7 +267,6 @@ $cartoes = $stmt->fetchAll();
         document.getElementById('cartao_vencimento').value = "";
         document.getElementById('cartao_limite').value = "";
         
-        // Reseta cor para o padrão (primeiro radio)
         const radios = document.querySelectorAll('.color-radio');
         if(radios.length > 0) radios[0].checked = true;
         
@@ -288,7 +281,6 @@ $cartoes = $stmt->fetchAll();
         document.getElementById('cartao_vencimento').value = cartao.cartovencimento;
         document.getElementById('cartao_limite').value = cartao.cartolimite;
 
-        // Seleciona a cor salva
         const corSalva = cartao.cartocor || '#1e293b';
         const radio = document.querySelector(`input[name="cor"][value="${corSalva}"]`);
         if (radio) {
