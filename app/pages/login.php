@@ -83,6 +83,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
+// ADICIONE ISSO: Roda a verificação de assinaturas
+include __DIR__ . '/../cron/cron_assinaturas.php';
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">

@@ -60,7 +60,8 @@ $paginas_sem_layout = [
     'salvar_transacao_engine',
     'fluxo_caixa_engine',
     'ajax_rapido_categoria',
-    'ajax_check_meta' // Caso você crie depois
+    'ajax_check_meta',
+    'salvar_assinatura_engine'
 ];
 
 // 5. Controle de Acesso (Login)

@@ -1,5 +1,5 @@
 <?php
-// app/pages/cadastros.php (ou menu.php)
+// app/pages/cadastros.php
 
 if (!defined('APP_PATH')) exit; 
 ?>
@@ -112,6 +112,16 @@ if (!defined('APP_PATH')) exit;
         </div>
 
         <div class="col-6 col-md-4 col-lg-3">
+            <a href="index.php?pg=cadastro_assinatura" class="menu-card">
+                <div class="icon-wrapper bg-cyan">
+                    <i class="bi bi-calendar-check"></i>
+                </div>
+                <div class="menu-title">Assinaturas</div>
+                <p class="menu-desc">Pagamentos recorrentes.</p>
+            </a>
+        </div>
+
+        <div class="col-6 col-md-4 col-lg-3">
             <a href="index.php?pg=analise_financeira" class="menu-card">
                 <div class="icon-wrapper bg-purple">
                     <i class="bi bi-pie-chart-fill"></i>
@@ -145,8 +155,6 @@ if (!defined('APP_PATH')) exit;
                 <p class="menu-desc">Limites e datas.</p>
             </a>
         </div>
-
-        
 
         <div class="col-6 col-md-4 col-lg-3">
             <a href="index.php?pg=metas_mensais" class="menu-card">

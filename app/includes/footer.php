@@ -15,6 +15,10 @@
             <i class="bi bi-credit-card-2-back" style="color: #ec4899;"></i>
         </a>
 
+        <a href="index.php?pg=cadastro_assinatura" class="fab-item" data-label="Assinaturas">
+            <i class="bi bi-calendar-check" style="color: #06b6d4;"></i>
+        </a>
+
         <a href="index.php?pg=dashboard" class="fab-item" data-label="Início">
             <i class="bi bi-house-door text-primary"></i>
         </a>
