@@ -33,50 +33,6 @@ if (isset($_SESSION['mensagem_flash'])) {
 $data_alvo = new DateTime($mes_filtro . "-01");
 $mes_atual_txt = $data_alvo->format('Y-m');
 
-// --- LÓGICA DE EXCLUSÃO (Link direto) ---
-if (isset($_GET['acao']) && $_GET['acao'] === 'excluir' && isset($_GET['id'])) {
-    $id = $_GET['id'];
-    $sql = $pdo->prepare("DELETE FROM contas WHERE contasid = ? AND usuarioid = ?");
-    if ($sql->execute([$id, $uid])) {
-        $_SESSION['mensagem_flash'] = "Lançamento excluído!";
-        $_SESSION['tipo_flash'] = "danger";
-        echo "<script>window.location.href='index.php?pg=fluxo_caixa&mes=$mes_filtro';</script>";
-        exit;
-    }
-}
-
-// --- LÓGICA DE ATUALIZAÇÃO (POST) ---
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['acao'] === 'editar') {
-    $id = $_POST['id'];
-    $descricao = $_POST['descricao'];
-    $valor = $_POST['valor'];
-    $vencimento = $_POST['vencimento'];
-    $cartoid = !empty($_POST['cartoid']) ? $_POST['cartoid'] : null;
-    $contafixa = isset($_POST['contafixa']) ? 1 : 0;
-
-    $data_obj = new DateTime($vencimento);
-    $competencia_normal = $data_obj->format('Y-m');
-    $competencia_fatura = null;
-
-    if ($cartoid) {
-        $stmt_c = $pdo->prepare("SELECT cartofechamento FROM cartoes WHERE cartoid = ?");
-        $stmt_c->execute([$cartoid]);
-        $fch = (int)$stmt_c->fetchColumn();
-        $dia_compra = (int)$data_obj->format('d');
-        
-        $data_fatura = clone $data_obj;
-        if ($dia_compra >= $fch) { 
-            $data_fatura->modify('first day of next month'); 
-        }
-        $competencia_fatura = $data_fatura->format('Y-m');
-    }
-
-    $sql = $pdo->prepare("UPDATE contas SET contadescricao = ?, contavalor = ?, contavencimento = ?, contacompetencia = ?, competenciafatura = ?, cartoid = ?, contafixa = ? WHERE contasid = ? AND usuarioid = ?");
-    if ($sql->execute([$descricao, $valor, $vencimento, $competencia_normal, $competencia_fatura, $cartoid, $contafixa, $id, $uid])) {
-        $mensagem = "<div class='alert alert-primary border-0 shadow-sm py-3 rounded-4 mb-4 d-flex align-items-center'><i class='bi bi-pencil-square fs-4 me-3'></i><div>Atualizado com sucesso!</div></div>";
-    }
-}
-
 // --- CONSULTAS ---
 $stmt_cartoes = $pdo->prepare("SELECT * FROM cartoes WHERE usuarioid = ? ORDER BY cartonome ASC");
 $stmt_cartoes->execute([$uid]);
@@ -92,7 +48,7 @@ $stmt_saidas = $pdo->prepare("SELECT c.* FROM contas c WHERE c.usuarioid = ? AND
 $stmt_saidas->execute([$uid, $mes_filtro]);
 $saidas = $stmt_saidas->fetchAll();
 
-// 3. Faturas (ALTERADO PARA BUSCAR A COR)
+// 3. Faturas
 $stmt_faturas = $pdo->prepare("
     SELECT 
         car.cartonome, car.cartoid, car.cartovencimento, car.cartocor, 
@@ -116,69 +72,29 @@ $saldo_do_mes = $total_entradas - $total_geral_saidas;
 ?>
 
 <style>
+    /* (Mantenha o CSS original aqui, igual ao anterior) */
     body { background-color: #f8fafc; color: #1e293b; }
-    
-    /* Animação do Alerta */
     .animate-fade-in { animation: fadeInDown 0.4s ease-out; }
     @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
-
     .month-pill { white-space: nowrap; padding: 8px 20px; border-radius: 50px; background: #fff; color: #64748b; text-decoration: none; font-size: 0.85rem; border: 1px solid #e2e8f0; font-weight: 600; transition: 0.2s; }
     .month-pill:hover { background: #f1f5f9; color: #4361ee; }
     .month-pill.active { background: #4361ee; color: #fff; border-color: #4361ee; box-shadow: 0 4px 12px rgba(67, 97, 238, 0.3); }
-    
     .section-header { font-size: 0.85rem; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
     .text-receita { color: #10b981; }
     .text-despesa { color: #ef4444; }
-    
-    /* CARD PRINCIPAL */
-    .transaction-card { 
-        background: #fff; border-radius: 20px; padding: 12px 16px; margin-bottom: 12px; 
-        display: flex; align-items: center; justify-content: space-between; 
-        transition: transform 0.2s, box-shadow 0.2s;
-    }
+    .transaction-card { background: #fff; border-radius: 20px; padding: 12px 16px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; transition: transform 0.2s, box-shadow 0.2s; }
     .transaction-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.03); }
-    
-    /* Estado Pago */
     .is-paid .item-desc { text-decoration: line-through; color: #94a3b8; }
     .is-paid .item-value { opacity: 0.5; text-decoration: line-through; }
-    
-    /* Textos */
     .item-desc { font-weight: 700; color: #1e293b; display: block; font-size: 0.9rem; line-height: 1.2; }
     .item-date { font-size: 0.75rem; color: #94a3b8; font-weight: 500; }
     .item-value { font-weight: 800; font-size: 0.95rem; }
-    
-    /* === BOTÃO CHECK CIRCULAR === */
-    .btn-check-toggle {
-        width: 40px; height: 40px;
-        border-radius: 50%;
-        border: 2px solid #e2e8f0;
-        background: transparent;
-        color: #e2e8f0;
-        display: flex; align-items: center; justify-content: center;
-        font-size: 1.3rem;
-        transition: all 0.2s ease;
-        text-decoration: none;
-    }
-    
-    .btn-check-toggle:hover {
-        border-color: #10b981;
-        color: #10b981;
-        background: #f0fdf4;
-    }
-
-    .btn-check-toggle.active {
-        background: #10b981;
-        border-color: #10b981;
-        color: #fff;
-        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
-    }
-    
-    /* Ícones de Fatura (Alterado para aceitar cor dinâmica) */
+    .btn-check-toggle { width: 40px; height: 40px; border-radius: 50%; border: 2px solid #e2e8f0; background: transparent; color: #e2e8f0; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; transition: all 0.2s ease; text-decoration: none; }
+    .btn-check-toggle:hover { border-color: #10b981; color: #10b981; background: #f0fdf4; }
+    .btn-check-toggle.active { background: #10b981; border-color: #10b981; color: #fff; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4); }
     .icon-fatura { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
-
     .btn-icon { width: 32px; height: 32px; border-radius: 10px; border: none; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; transition: 0.2s; color: #94a3b8; background: transparent; }
     .btn-icon:hover { background: #f1f5f9; color: #1e293b; }
-    
     .balance-card { background: #1e293b; color: white; border-radius: 20px; padding: 20px; margin-bottom: 30px; }
 </style>
 
@@ -231,7 +147,6 @@ $saldo_do_mes = $total_entradas - $total_geral_saidas;
             <?php foreach($entradas as $e): $isPago = ($e['contasituacao'] == 'Pago'); ?>
                 <div class="transaction-card shadow-sm <?= $isPago ? 'is-paid' : '' ?>">
                     <div class="d-flex align-items-center overflow-hidden">
-                        
                         <div class="me-3">
                             <a href="index.php?pg=acoes_conta&acao=<?= $isPago ? 'estornar' : 'pagar' ?>&id=<?= $e['contasid'] ?>&origem=fluxo" 
                                class="btn-check-toggle <?= $isPago ? 'active' : '' ?>" 
@@ -239,7 +154,6 @@ $saldo_do_mes = $total_entradas - $total_geral_saidas;
                                <i class="bi bi-check-lg"></i>
                             </a>
                         </div>
-
                         <div class="text-truncate">
                             <span class="item-desc text-truncate"><?= $e['contadescricao'] ?></span>
                             <span class="item-date">
@@ -253,7 +167,7 @@ $saldo_do_mes = $total_entradas - $total_geral_saidas;
                         <div class="item-value text-receita mb-1">R$ <?= number_format($e['contavalor'], 2, ',', '.') ?></div>
                         <div class="d-flex gap-1">
                             <button onclick='abrirModalEdicao(<?= json_encode($e) ?>)' class="btn-icon" title="Editar"><i class="bi bi-pencil-fill"></i></button>
-                            <a href="?pg=fluxo_caixa&mes=<?= $mes_filtro ?>&acao=excluir&id=<?= $e['contasid'] ?>" class="btn-icon text-danger" onclick="return confirm('Excluir?')" title="Excluir"><i class="bi bi-trash-fill"></i></a>
+                            <a href="?pg=fluxo_caixa_engine&acao=excluir&id=<?= $e['contasid'] ?>&mes=<?= $mes_filtro ?>" class="btn-icon text-danger" onclick="return confirm('Excluir?')" title="Excluir"><i class="bi bi-trash-fill"></i></a>
                         </div>
                     </div>
                 </div>
@@ -267,7 +181,6 @@ $saldo_do_mes = $total_entradas - $total_geral_saidas;
             
             <?php foreach($faturas_mes as $fat): 
                 $faturaPaga = ($fat['qtd_pendentes'] == 0);
-                // Cor do cartão ou padrão azul
                 $corCartao = $fat['cartocor'] ?? '#4361ee';
             ?>
                 <div class="transaction-card shadow-sm border-start border-4 <?= $faturaPaga ? 'is-paid' : '' ?>" style="border-color: <?= $corCartao ?> !important;">
@@ -300,7 +213,6 @@ $saldo_do_mes = $total_entradas - $total_geral_saidas;
             <?php foreach($saidas as $s): $isPago = ($s['contasituacao'] == 'Pago'); ?>
                 <div class="transaction-card shadow-sm <?= $isPago ? 'is-paid' : '' ?>">
                     <div class="d-flex align-items-center overflow-hidden">
-                        
                         <div class="me-3">
                             <a href="index.php?pg=acoes_conta&acao=<?= $isPago ? 'estornar' : 'pagar' ?>&id=<?= $s['contasid'] ?>&origem=fluxo" 
                                class="btn-check-toggle <?= $isPago ? 'active' : '' ?>" 
@@ -308,7 +220,6 @@ $saldo_do_mes = $total_entradas - $total_geral_saidas;
                                <i class="bi bi-check-lg"></i>
                             </a>
                         </div>
-
                         <div class="text-truncate">
                             <span class="item-desc text-truncate"><?= $s['contadescricao'] ?></span>
                             <span class="item-date">
@@ -322,7 +233,7 @@ $saldo_do_mes = $total_entradas - $total_geral_saidas;
                         <div class="item-value text-despesa mb-1">R$ <?= number_format($s['contavalor'], 2, ',', '.') ?></div>
                         <div class="d-flex gap-1">
                             <button onclick='abrirModalEdicao(<?= json_encode($s) ?>)' class="btn-icon" title="Editar"><i class="bi bi-pencil-fill"></i></button>
-                            <a href="?pg=fluxo_caixa&mes=<?= $mes_filtro ?>&acao=excluir&id=<?= $s['contasid'] ?>" class="btn-icon text-danger" onclick="return confirm('Excluir?')" title="Excluir"><i class="bi bi-trash-fill"></i></a>
+                            <a href="?pg=fluxo_caixa_engine&acao=excluir&id=<?= $s['contasid'] ?>&mes=<?= $mes_filtro ?>" class="btn-icon text-danger" onclick="return confirm('Excluir?')" title="Excluir"><i class="bi bi-trash-fill"></i></a>
                         </div>
                     </div>
                 </div>
@@ -334,9 +245,11 @@ $saldo_do_mes = $total_entradas - $total_geral_saidas;
 <div class="modal fade" id="modalEditarConta" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg" style="border-radius: 24px;">
-            <form method="POST">
+            <form method="POST" action="index.php?pg=fluxo_caixa_engine">
                 <input type="hidden" name="acao" value="editar">
                 <input type="hidden" name="id" id="edit_id">
+                <input type="hidden" name="mes_atual" value="<?= $mes_filtro ?>">
+                
                 <div class="modal-header border-0 pb-0 pt-4 px-4">
                     <h5 class="fw-bold m-0">Editar Lançamento</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -372,7 +285,10 @@ function abrirModalEdicao(conta) {
     document.getElementById('edit_vencimento').value = conta.contavencimento;
     document.getElementById('edit_cartoid').value = conta.cartoid || "";
     document.getElementById('edit_contafixa').checked = (conta.contafixa == 1);
+    
+    // Esconde seleção de cartão se for receita (Entrada)
     document.getElementById('edit_div_cartao').style.display = (conta.contatipo === 'Entrada') ? 'none' : 'block';
+    
     new bootstrap.Modal(document.getElementById('modalEditarConta')).show();
 }
 </script>

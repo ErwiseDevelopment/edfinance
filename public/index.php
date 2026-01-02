@@ -51,12 +51,14 @@ $paginas_publicas = [
 // Inclui: Telas Cheias (Onboarding), Scripts de Processamento (Engines) e AJAX
 $paginas_sem_layout = [
     'onboarding', 
+    'acoes_conta',
     'logout', 
     'ajax_analise',           // Retorna JSON, não pode ter HTML em volta
     'salvar_cartao_engine',   // Redireciona, não pode ter HTML antes
     'salvar_conta_engine',
     'salvar_categoria_engine',
-    'salvar_transacao_engine' // Caso você crie depois
+    'salvar_transacao_engine',
+    'fluxo_caixa_engine' // Caso você crie depois
 ];
 
 // 5. Controle de Acesso (Login)

@@ -9,7 +9,10 @@ $mes_filtro = $_GET['mes'] ?? date('Y-m');
 
 // --- 0. PREPARAÇÃO ---
 $primeiro_dia_mes = $mes_filtro . "-01";
-$campo_data_real = "contacompetencia"; // Define se busca pela competência
+
+// --- AJUSTE IMPORTANTE ---
+// Prioriza a 'competenciafatura' (data do cartão). Se for nula (débito/dinheiro), usa 'contacompetencia'.
+$campo_data_real = "COALESCE(competenciafatura, contacompetencia)"; 
 
 // --- 1. SALDO REAL ACUMULADO (CAIXA PASSADO) ---
 $stmt_passado_real = $pdo->prepare("SELECT 
@@ -82,7 +85,6 @@ for($i = 5; $i >= 0; $i--) {
     $stmt_h->execute([$uid, $m]);
     $h = $stmt_h->fetch();
     
-    // Formatação segura de data
     $fmt = new IntlDateFormatter('pt_BR', IntlDateFormatter::NONE, IntlDateFormatter::NONE);
     $fmt->setPattern('MMM');
     $meses_hist[] = ucfirst($fmt->format(strtotime($m."-01")));
@@ -157,11 +159,9 @@ $titulo_mes = ucfirst($fmt_titulo->format(strtotime($primeiro_dia_mes)));
                 
                 $fmt_nav = new IntlDateFormatter('pt_BR', IntlDateFormatter::NONE, IntlDateFormatter::NONE);
                 $fmt_nav->setPattern('MMM yy');
-                
                 if(date('Y', strtotime($m)) == date('Y')) {
                      $fmt_nav->setPattern('MMM');
                 }
-                
                 $label = ucfirst($fmt_nav->format(strtotime($m."-01")));
             ?>
                 <a href="?pg=analise_financeira&mes=<?= $m ?>" class="month-pill <?= $mes_filtro == $m ? 'active' : '' ?>">
