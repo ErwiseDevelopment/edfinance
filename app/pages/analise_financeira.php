@@ -1,5 +1,5 @@
 <?php
-// app/pages/dashboard_analitico.php
+// app/pages/analise_financeira.php
 
 // 1. Segurança e Setup
 if (!defined('APP_PATH')) exit;
@@ -9,9 +9,9 @@ $mes_filtro = $_GET['mes'] ?? date('Y-m');
 
 // --- 0. PREPARAÇÃO ---
 $primeiro_dia_mes = $mes_filtro . "-01";
-$campo_data_real = "contacompetencia"; // Define se busca pela competência ou vencimento
+$campo_data_real = "contacompetencia"; // Define se busca pela competência
 
-// --- 1. SALDO REAL ACUMULADO (CAIXA) ---
+// --- 1. SALDO REAL ACUMULADO (CAIXA PASSADO) ---
 $stmt_passado_real = $pdo->prepare("SELECT 
     SUM(CASE WHEN contatipo = 'Entrada' THEN contavalor ELSE 0 END) -
     SUM(CASE WHEN contatipo = 'Saída' THEN contavalor ELSE 0 END) as saldo
@@ -22,7 +22,7 @@ $stmt_passado_real = $pdo->prepare("SELECT
 $stmt_passado_real->execute([$uid, $mes_filtro]);
 $saldo_anterior_real = $stmt_passado_real->fetch()['saldo'] ?? 0;
 
-// --- 2. SALDO GERAL (PROJEÇÃO) ---
+// --- 2. SALDO GERAL (PROJEÇÃO PASSADA) ---
 $stmt_passado_geral = $pdo->prepare("SELECT 
     SUM(CASE WHEN contatipo = 'Entrada' THEN contavalor ELSE 0 END) -
     SUM(CASE WHEN contatipo = 'Saída' THEN contavalor ELSE 0 END) as saldo
@@ -74,10 +74,10 @@ $total_preso = abs($stmt_uso->fetch()['total'] ?? 0);
 $perc_limite = ($limite_total > 0) ? ($total_preso / $limite_total) * 100 : 0;
 
 // --- 5. DADOS PARA GRÁFICOS ---
-// Histórico (6 meses)
+// Histórico (6 meses ATRÁS a partir do filtro)
 $meses_hist = []; $valores_hist_e = []; $valores_hist_s = [];
 for($i = 5; $i >= 0; $i--) {
-    $m = date('Y-m', strtotime("-$i months", strtotime(date('Y-m-01'))));
+    $m = date('Y-m', strtotime("-$i months", strtotime($primeiro_dia_mes)));
     $stmt_h = $pdo->prepare("SELECT SUM(CASE WHEN contatipo='Entrada' THEN contavalor ELSE 0 END) as e, SUM(CASE WHEN contatipo='Saída' THEN contavalor ELSE 0 END) as s FROM contas WHERE usuarioid=? AND $campo_data_real=?");
     $stmt_h->execute([$uid, $m]);
     $h = $stmt_h->fetch();
@@ -120,10 +120,10 @@ $titulo_mes = ucfirst($fmt_titulo->format(strtotime($primeiro_dia_mes)));
 <style>
     /* CSS Padronizado */
     :root { --primary: #4361ee; --success: #10b981; --danger: #ef4444; --warning: #f59e0b; --dark: #1e293b; --purple: #7209b7; }
-    body { background-color: #f8fafc; font-family: 'Plus Jakarta Sans', sans-serif; }
     
     .month-pill { padding: 8px 20px; border-radius: 50px; background: white; border: 1px solid #e2e8f0; color: #64748b; text-decoration: none; font-weight: 600; font-size: 0.85rem; white-space: nowrap; transition: 0.2s; }
     .month-pill.active { background: var(--primary); color: white; border-color: var(--primary); box-shadow: 0 4px 12px rgba(67, 97, 238, 0.3); }
+    .month-pill:hover { border-color: var(--primary); color: var(--primary); }
     
     .card-stat { border: none; border-radius: 24px; background: #fff; box-shadow: 0 4px 20px rgba(0,0,0,0.03); height: 100%; padding: 24px; transition: transform 0.2s; }
     .card-stat:hover { transform: translateY(-3px); }
@@ -149,14 +149,24 @@ $titulo_mes = ucfirst($fmt_titulo->format(strtotime($primeiro_dia_mes)));
             <h4 class="fw-bold mb-0">Dashboard Analítico</h4>
             <p class="text-muted small mb-0">Visão geral financeira de <strong><?= $titulo_mes ?></strong></p>
         </div>
+        
         <div class="d-flex overflow-x-auto gap-2 pb-2" style="scrollbar-width: none; max-width: 100%;">
-            <?php for($i = -1; $i <= 4; $i++): 
-                $m = date('Y-m', strtotime("+$i month", strtotime(date('Y-m-01'))));
+            <?php 
+            for($i = -2; $i <= 2; $i++): 
+                $m = date('Y-m', strtotime("+$i month", strtotime($primeiro_dia_mes)));
+                
                 $fmt_nav = new IntlDateFormatter('pt_BR', IntlDateFormatter::NONE, IntlDateFormatter::NONE);
                 $fmt_nav->setPattern('MMM yy');
+                
+                if(date('Y', strtotime($m)) == date('Y')) {
+                     $fmt_nav->setPattern('MMM');
+                }
+                
                 $label = ucfirst($fmt_nav->format(strtotime($m."-01")));
             ?>
-                <a href="?pg=dashboard_analitico&mes=<?= $m ?>" class="month-pill <?= $mes_filtro == $m ? 'active' : '' ?>"><?= $label ?></a>
+                <a href="?pg=analise_financeira&mes=<?= $m ?>" class="month-pill <?= $mes_filtro == $m ? 'active' : '' ?>">
+                    <?= $label ?>
+                </a>
             <?php endfor; ?>
         </div>
     </div>
@@ -263,7 +273,7 @@ $titulo_mes = ucfirst($fmt_titulo->format(strtotime($primeiro_dia_mes)));
                 <div class="d-flex justify-content-between align-items-center mb-4">
                     <h6 class="fw-bold m-0 small text-uppercase text-muted">Top Categorias</h6>
                     <a href="?pg=analise_categorias" class="btn btn-sm btn-light rounded-pill px-3 fw-bold border" style="font-size: 0.7rem;">
-                        VER RELATÓRIOS
+                        RELATÓRIOS
                     </a>
                 </div>
                 <div style="max-height: 400px; overflow-y: auto; padding-right: 5px;">
