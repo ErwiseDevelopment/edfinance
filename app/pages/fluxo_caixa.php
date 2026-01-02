@@ -7,7 +7,7 @@ $uid = $_SESSION['usuarioid'];
 $mes_filtro = $_GET['mes'] ?? date('Y-m');
 $mensagem = "";
 
-// --- SISTEMA DE MENSAGENS FLASH (Sucesso/Erro) ---
+// --- SISTEMA DE MENSAGENS FLASH ---
 if (isset($_SESSION['mensagem_flash'])) {
     $msg = $_SESSION['mensagem_flash'];
     $tipo = $_SESSION['tipo_flash'] ?? 'success';
@@ -33,28 +33,45 @@ if (isset($_SESSION['mensagem_flash'])) {
 $data_alvo = new DateTime($mes_filtro . "-01");
 $mes_atual_txt = $data_alvo->format('Y-m');
 
-// --- CONSULTAS ---
-// 1. Cartões
+// ====================================================================
+// 1. CÁLCULO DO SALDO ANTERIOR (CORREÇÃO DE VALORES)
+// ====================================================================
+// Busca o saldo acumulado de todos os meses anteriores para somar ao atual
+// Usa a mesma lógica do analise_financeira.php
+$stmt_anterior = $pdo->prepare("SELECT 
+    SUM(CASE WHEN contatipo = 'Entrada' THEN contavalor ELSE 0 END) -
+    SUM(CASE WHEN contatipo = 'Saída' THEN contavalor ELSE 0 END) as saldo
+    FROM contas 
+    WHERE usuarioid = ? 
+    AND COALESCE(competenciafatura, contacompetencia) < ?"); // Tudo antes deste mês
+$stmt_anterior->execute([$uid, $mes_filtro]);
+$saldo_anterior = $stmt_anterior->fetch()['saldo'] ?? 0;
+
+
+// ====================================================================
+// 2. CONSULTAS DO MÊS ATUAL
+// ====================================================================
+
+// Cartões e Categorias
 $stmt_cartoes = $pdo->prepare("SELECT * FROM cartoes WHERE usuarioid = ? ORDER BY cartonome ASC");
 $stmt_cartoes->execute([$uid]);
 $lista_cartoes = $stmt_cartoes->fetchAll();
 
-// 2. Categorias (NOVO: Necessário para o select de edição)
 $stmt_cat = $pdo->prepare("SELECT * FROM categorias WHERE usuarioid = ? ORDER BY categoriadescricao ASC");
 $stmt_cat->execute([$uid]);
 $lista_categorias = $stmt_cat->fetchAll();
 
-// 3. Entradas (Adicionado categoriaid na query se não tiver)
+// Entradas do Mês
 $stmt_entradas = $pdo->prepare("SELECT c.*, cat.categoriadescricao FROM contas c LEFT JOIN categorias cat ON c.categoriaid = cat.categoriaid WHERE c.usuarioid = ? AND c.contacompetencia = ? AND c.contatipo = 'Entrada' ORDER BY c.contavencimento ASC");
 $stmt_entradas->execute([$uid, $mes_filtro]);
 $entradas = $stmt_entradas->fetchAll();
 
-// 4. Saídas Diretas
+// Saídas Diretas do Mês
 $stmt_saidas = $pdo->prepare("SELECT c.*, cat.categoriadescricao FROM contas c LEFT JOIN categorias cat ON c.categoriaid = cat.categoriaid WHERE c.usuarioid = ? AND c.contacompetencia = ? AND c.contatipo = 'Saída' AND c.cartoid IS NULL ORDER BY c.contavencimento ASC");
 $stmt_saidas->execute([$uid, $mes_filtro]);
 $saidas = $stmt_saidas->fetchAll();
 
-// 5. Faturas
+// Faturas do Mês
 $stmt_faturas = $pdo->prepare("
     SELECT 
         car.cartonome, car.cartoid, car.cartovencimento, car.cartocor, 
@@ -69,16 +86,20 @@ $stmt_faturas = $pdo->prepare("
 $stmt_faturas->execute([$uid, $mes_atual_txt]);
 $faturas_mes = $stmt_faturas->fetchAll();
 
-// Totais
+// ====================================================================
+// 3. TOTAIS E CÁLCULO FINAL
+// ====================================================================
 $total_entradas = array_sum(array_column($entradas, 'contavalor'));
 $total_saidas_diretas = array_sum(array_column($saidas, 'contavalor'));
 $total_faturas = array_sum(array_column($faturas_mes, 'total_fatura'));
 $total_geral_saidas = $total_saidas_diretas + $total_faturas;
-$saldo_do_mes = $total_entradas - $total_geral_saidas;
+
+// CORREÇÃO: O Saldo final agora inclui o acumulado anterior
+$saldo_final_previsto = $saldo_anterior + ($total_entradas - $total_geral_saidas);
 ?>
 
 <style>
-    /* CSS MANTIDO */
+    /* (Mantenha o CSS original aqui, igual ao anterior) */
     body { background-color: #f8fafc; color: #1e293b; }
     .animate-fade-in { animation: fadeInDown 0.4s ease-out; }
     @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
@@ -128,7 +149,7 @@ $saldo_do_mes = $total_entradas - $total_geral_saidas;
             <div class="balance-card shadow-sm d-flex justify-content-between align-items-center">
                 <div>
                     <span class="text-white-50 small fw-bold text-uppercase">Balanço Previsto</span>
-                    <h2 class="fw-bold m-0 text-white">R$ <?= number_format($saldo_do_mes, 2, ',', '.') ?></h2>
+                    <h2 class="fw-bold m-0 text-white">R$ <?= number_format($saldo_final_previsto, 2, ',', '.') ?></h2>
                 </div>
                 <div class="text-end">
                     <div class="badge bg-success bg-opacity-25 text-success mb-1">+ <?= number_format($total_entradas, 2, ',', '.') ?></div>
@@ -306,7 +327,6 @@ function abrirModalEdicao(conta) {
     document.getElementById('edit_cartoid').value = conta.cartoid || "";
     document.getElementById('edit_contafixa').checked = (conta.contafixa == 1);
     
-    // PREENCHE A CATEGORIA
     document.getElementById('edit_categoriaid').value = conta.categoriaid;
     
     document.getElementById('edit_div_cartao').style.display = (conta.contatipo === 'Entrada') ? 'none' : 'block';
