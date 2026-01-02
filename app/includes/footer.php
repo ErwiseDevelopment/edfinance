@@ -35,14 +35,13 @@
             <i class="bi bi-tags text-warning"></i>
         </a>
 
-
         <a href="index.php?pg=metas_mensais" class="fab-item" data-label="Metas Mensais">
             <i class="bi bi-bullseye text-danger"></i>
         </a>
+        
         <a href="index.php?pg=analise_financeira" class="fab-item" data-label="Análise Financeira">
              <i class="bi bi-pie-chart text-info"></i>
         </a>
-        
 
         <a href="index.php?pg=perfil" class="fab-item" data-label="Meu Perfil">
             <i class="bi bi-person-gear" style="color: #f59e0b;"></i>
@@ -60,9 +59,17 @@
                 </p>
             </div>
             <div class="col-md-6 text-center text-md-end mt-3 mt-md-0">
-                <a href="#" class="btn btn-sm btn-light rounded-circle shadow-sm me-2"><i class="bi bi-instagram text-danger"></i></a>
-                <a href="#" class="btn btn-sm btn-light rounded-circle shadow-sm me-2"><i class="bi bi-whatsapp text-success"></i></a>
-                <a href="#" class="btn btn-sm btn-light rounded-circle shadow-sm"><i class="bi bi-globe2 text-primary"></i></a>
+                <a href="https://instagram.com/erwisedev" target="_blank" class="btn btn-sm btn-light rounded-circle shadow-sm me-2" title="@erwisedev">
+                    <i class="bi bi-instagram text-danger"></i>
+                </a>
+                
+                <a href="https://wa.me/5511934008521" target="_blank" class="btn btn-sm btn-light rounded-circle shadow-sm me-2" title="Falar no WhatsApp">
+                    <i class="bi bi-whatsapp text-success"></i>
+                </a>
+                
+                <a href="https://erwise.com.br" target="_blank" class="btn btn-sm btn-light rounded-circle shadow-sm" title="Visitar Site">
+                    <i class="bi bi-globe2 text-primary"></i>
+                </a>
             </div>
         </div>
     </div>
