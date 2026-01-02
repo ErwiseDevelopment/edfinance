@@ -27,6 +27,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['ac
     $descricao = $_POST['descricao'];
     $valor = $_POST['valor'];
     $vencimento = $_POST['vencimento'];
+    
+    // NOVO: Recebe a categoria do formulário
+    $categoriaid = !empty($_POST['categoriaid']) ? $_POST['categoriaid'] : null;
+    
     $cartoid = !empty($_POST['cartoid']) ? $_POST['cartoid'] : null;
     $contafixa = isset($_POST['contafixa']) ? 1 : 0;
     
@@ -51,9 +55,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['ac
         $competencia_fatura = $data_fatura->format('Y-m');
     }
 
-    $sql = $pdo->prepare("UPDATE contas SET contadescricao = ?, contavalor = ?, contavencimento = ?, contacompetencia = ?, competenciafatura = ?, cartoid = ?, contafixa = ? WHERE contasid = ? AND usuarioid = ?");
+    // UPDATE ATUALIZADO: Incluindo 'categoriaid'
+    $sql = $pdo->prepare("
+        UPDATE contas 
+        SET contadescricao = ?, contavalor = ?, contavencimento = ?, 
+            contacompetencia = ?, competenciafatura = ?, 
+            cartoid = ?, contafixa = ?, categoriaid = ? 
+        WHERE contasid = ? AND usuarioid = ?
+    ");
     
-    if ($sql->execute([$descricao, $valor, $vencimento, $competencia_normal, $competencia_fatura, $cartoid, $contafixa, $id, $uid])) {
+    if ($sql->execute([$descricao, $valor, $vencimento, $competencia_normal, $competencia_fatura, $cartoid, $contafixa, $categoriaid, $id, $uid])) {
         $_SESSION['mensagem_flash'] = "Lançamento atualizado com sucesso!";
         $_SESSION['tipo_flash'] = "success";
     } else {

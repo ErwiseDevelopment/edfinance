@@ -34,21 +34,27 @@ $data_alvo = new DateTime($mes_filtro . "-01");
 $mes_atual_txt = $data_alvo->format('Y-m');
 
 // --- CONSULTAS ---
+// 1. Cartões
 $stmt_cartoes = $pdo->prepare("SELECT * FROM cartoes WHERE usuarioid = ? ORDER BY cartonome ASC");
 $stmt_cartoes->execute([$uid]);
 $lista_cartoes = $stmt_cartoes->fetchAll();
 
-// 1. Entradas
-$stmt_entradas = $pdo->prepare("SELECT c.* FROM contas c WHERE c.usuarioid = ? AND c.contacompetencia = ? AND c.contatipo = 'Entrada' ORDER BY c.contavencimento ASC");
+// 2. Categorias (NOVO: Necessário para o select de edição)
+$stmt_cat = $pdo->prepare("SELECT * FROM categorias WHERE usuarioid = ? ORDER BY categoriadescricao ASC");
+$stmt_cat->execute([$uid]);
+$lista_categorias = $stmt_cat->fetchAll();
+
+// 3. Entradas (Adicionado categoriaid na query se não tiver)
+$stmt_entradas = $pdo->prepare("SELECT c.*, cat.categoriadescricao FROM contas c LEFT JOIN categorias cat ON c.categoriaid = cat.categoriaid WHERE c.usuarioid = ? AND c.contacompetencia = ? AND c.contatipo = 'Entrada' ORDER BY c.contavencimento ASC");
 $stmt_entradas->execute([$uid, $mes_filtro]);
 $entradas = $stmt_entradas->fetchAll();
 
-// 2. Saídas Diretas
-$stmt_saidas = $pdo->prepare("SELECT c.* FROM contas c WHERE c.usuarioid = ? AND c.contacompetencia = ? AND c.contatipo = 'Saída' AND c.cartoid IS NULL ORDER BY c.contavencimento ASC");
+// 4. Saídas Diretas
+$stmt_saidas = $pdo->prepare("SELECT c.*, cat.categoriadescricao FROM contas c LEFT JOIN categorias cat ON c.categoriaid = cat.categoriaid WHERE c.usuarioid = ? AND c.contacompetencia = ? AND c.contatipo = 'Saída' AND c.cartoid IS NULL ORDER BY c.contavencimento ASC");
 $stmt_saidas->execute([$uid, $mes_filtro]);
 $saidas = $stmt_saidas->fetchAll();
 
-// 3. Faturas
+// 5. Faturas
 $stmt_faturas = $pdo->prepare("
     SELECT 
         car.cartonome, car.cartoid, car.cartovencimento, car.cartocor, 
@@ -72,7 +78,7 @@ $saldo_do_mes = $total_entradas - $total_geral_saidas;
 ?>
 
 <style>
-    /* (Mantenha o CSS original aqui, igual ao anterior) */
+    /* CSS MANTIDO */
     body { background-color: #f8fafc; color: #1e293b; }
     .animate-fade-in { animation: fadeInDown 0.4s ease-out; }
     @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
@@ -87,6 +93,7 @@ $saldo_do_mes = $total_entradas - $total_geral_saidas;
     .is-paid .item-desc { text-decoration: line-through; color: #94a3b8; }
     .is-paid .item-value { opacity: 0.5; text-decoration: line-through; }
     .item-desc { font-weight: 700; color: #1e293b; display: block; font-size: 0.9rem; line-height: 1.2; }
+    .item-cat { font-size: 0.7rem; color: #94a3b8; font-weight: 600; text-transform: uppercase; display: block; margin-top: 2px; }
     .item-date { font-size: 0.75rem; color: #94a3b8; font-weight: 500; }
     .item-value { font-weight: 800; font-size: 0.95rem; }
     .btn-check-toggle { width: 40px; height: 40px; border-radius: 50%; border: 2px solid #e2e8f0; background: transparent; color: #e2e8f0; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; transition: all 0.2s ease; text-decoration: none; }
@@ -156,6 +163,7 @@ $saldo_do_mes = $total_entradas - $total_geral_saidas;
                         </div>
                         <div class="text-truncate">
                             <span class="item-desc text-truncate"><?= $e['contadescricao'] ?></span>
+                            <span class="item-cat"><?= $e['categoriadescricao'] ?></span>
                             <span class="item-date">
                                 <?= date('d/m', strtotime($e['contavencimento'])) ?>
                                 <?php if($e['contafixa']): ?> • <i class="bi bi-arrow-repeat" title="Fixa"></i><?php endif; ?>
@@ -222,6 +230,7 @@ $saldo_do_mes = $total_entradas - $total_geral_saidas;
                         </div>
                         <div class="text-truncate">
                             <span class="item-desc text-truncate"><?= $s['contadescricao'] ?></span>
+                            <span class="item-cat"><?= $s['categoriadescricao'] ?></span>
                             <span class="item-date">
                                 <?= date('d/m', strtotime($s['contavencimento'])) ?>
                                 <?php if($s['contafixa']): ?> • <i class="bi bi-arrow-repeat" title="Fixa"></i><?php endif; ?>
@@ -256,6 +265,17 @@ $saldo_do_mes = $total_entradas - $total_geral_saidas;
                 </div>
                 <div class="modal-body p-4">
                     <div class="mb-3"><label class="form-label small fw-bold text-muted">Descrição</label><input type="text" name="descricao" id="edit_descricao" class="form-control form-control-lg bg-light border-0" required></div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-muted">Categoria</label>
+                        <select name="categoriaid" id="edit_categoriaid" class="form-select form-select-lg bg-light border-0" required>
+                            <option value="">Selecione...</option>
+                            <?php foreach($lista_categorias as $cat): ?>
+                                <option value="<?= $cat['categoriaid'] ?>"><?= $cat['categoriadescricao'] ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
                     <div class="row mb-3">
                         <div class="col-6"><label class="form-label small fw-bold text-muted">Valor</label><input type="number" step="0.01" name="valor" id="edit_valor" class="form-control form-control-lg bg-light border-0" required></div>
                         <div class="col-6"><label class="form-label small fw-bold text-muted">Vencimento</label><input type="date" name="vencimento" id="edit_vencimento" class="form-control form-control-lg bg-light border-0" required></div>
@@ -286,7 +306,9 @@ function abrirModalEdicao(conta) {
     document.getElementById('edit_cartoid').value = conta.cartoid || "";
     document.getElementById('edit_contafixa').checked = (conta.contafixa == 1);
     
-    // Esconde seleção de cartão se for receita (Entrada)
+    // PREENCHE A CATEGORIA
+    document.getElementById('edit_categoriaid').value = conta.categoriaid;
+    
     document.getElementById('edit_div_cartao').style.display = (conta.contatipo === 'Entrada') ? 'none' : 'block';
     
     new bootstrap.Modal(document.getElementById('modalEditarConta')).show();
