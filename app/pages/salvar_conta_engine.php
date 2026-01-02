@@ -50,21 +50,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // --- C. LÓGICA DE REPETIÇÃO E VALOR ---
         
         $qtd_lancamentos = 1;
-        $valor_final = $contavalor;
-        $grupo_id = null; // Para agrupar os lançamentos
+        $grupo_id = null; 
+
+        // O valor base é o digitado (se for parcela, já é o valor da parcela)
+        $valor_final = $contavalor; 
 
         if ($contafixa == 1) {
             // CENÁRIO 1: CONTA FIXA (Recorrente)
-            // Gera 12 meses para frente com o VALOR CHEIO
+            // Gera 12 meses com o mesmo valor
             $qtd_lancamentos = 12; 
-            $valor_final = $contavalor; // Não divide!
-            $grupo_id = uniqid('fix_'); // Identificador para facilitar exclusão em massa depois
+            $grupo_id = uniqid('fix_');
 
         } elseif ($parcelas_input > 1) {
             // CENÁRIO 2: PARCELADO (Cartão)
-            // Gera N meses dividindo o valor total
+            // Gera N parcelas. O valor digitado JÁ É O VALOR DA PARCELA.
             $qtd_lancamentos = $parcelas_input;
-            $valor_final = $contavalor / $parcelas_input; // Divide o valor!
+            
+            // CORREÇÃO AQUI: NÃO DIVIDE MAIS O VALOR
+            // Antes: $valor_final = $contavalor / $parcelas_input;
+            // Agora: Mantém o valor digitado, pois ele representa "1x de..."
+            $valor_final = $contavalor; 
+            
             $grupo_id = uniqid('parc_');
         }
 
@@ -84,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         for ($i = 1; $i <= $qtd_lancamentos; $i++) {
             
-            // 1. Data Vencimento (Soma meses a partir da data base)
+            // 1. Data Vencimento
             $data_iteracao = clone $data_base;
             if ($i > 1) {
                 $data_iteracao->modify("+" . ($i - 1) . " months");
@@ -93,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $vencimento_db = $data_iteracao->format('Y-m-d');
             $competencia_db = $data_iteracao->format('Y-m');
 
-            // 2. Data Fatura (Se tiver cartão)
+            // 2. Data Fatura
             $fatura_db = null;
             if ($cartoid) {
                 $dia_compra = (int)$data_iteracao->format('d');
@@ -107,25 +113,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // 3. Descrição
             $descricao_final = $contadescricao;
-            
-            // Adiciona (1/12) apenas se for Parcelado. 
-            // Se for Fixa, geralmente não se coloca numeração, ou usa outro padrão.
             if ($contafixa == 0 && $qtd_lancamentos > 1) {
                 $descricao_final .= " ($i/$qtd_lancamentos)";
             }
 
             // 4. Inserção
-            // Se for fixa, salvamos parcela_num como null ou 1, pois não é dívida parcelada
+            $p_num   = ($contafixa == 1) ? 1 : $i;
+            $p_total = ($contafixa == 1) ? 1 : $qtd_lancamentos;
+
             $sql = "INSERT INTO contas (
                 usuarioid, categoriaid, contadescricao, contavalor, 
                 contavencimento, contacompetencia, competenciafatura, 
                 contatipo, contafixa, cartoid, 
                 contaparcela_num, contaparcela_total, contagrupoid, contasituacao
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendente')";
-
-            // Se for fixa, não preenchemos contaparcela_num/total para não confundir com parcelamento de cartão
-            $p_num   = ($contafixa == 1) ? 1 : $i;
-            $p_total = ($contafixa == 1) ? 1 : $qtd_lancamentos;
 
             $stmt = $pdo->prepare($sql);
             $stmt->execute([
