@@ -38,9 +38,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $hash = password_hash($senha, PASSWORD_DEFAULT);
                 // Define primeiro acesso como 1 (se você tiver essa coluna)
-                $sql = $pdo->prepare("INSERT INTO usuarios (usuarionome, usuarioemail, usuariosenha, usuario_primeiro_acesso) VALUES (?, ?, ?, 1)");
+                // Usamos try-catch para evitar erro fatal se a coluna não existir ainda no banco
+                try {
+                    $sql = $pdo->prepare("INSERT INTO usuarios (usuarionome, usuarioemail, usuariosenha, usuario_primeiro_acesso) VALUES (?, ?, ?, 1)");
+                    $executou = $sql->execute([$nome, $email, $hash]);
+                } catch (Exception $e) {
+                    // Fallback para tabela antiga sem a coluna usuario_primeiro_acesso
+                    $sql = $pdo->prepare("INSERT INTO usuarios (usuarionome, usuarioemail, usuariosenha) VALUES (?, ?, ?)");
+                    $executou = $sql->execute([$nome, $email, $hash]);
+                }
                 
-                if($sql->execute([$nome, $email, $hash])) {
+                if($executou) {
                     $sucesso = "Conta criada com sucesso! Faça login para continuar.";
                 } else {
                     $erro = "Erro ao criar conta. Tente novamente.";
@@ -63,9 +71,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $primeiro_acesso = $user['usuario_primeiro_acesso'] ?? 0;
 
             if ($primeiro_acesso == 1) {
-                // Se tiver onboarding, manda pra lá
-                header("Location: onboarding.php");
+                // CORREÇÃO: Redireciona para o index com parâmetro pg=onboarding
+                header("Location: index.php?pg=onboarding");
             } else {
+                // CORREÇÃO: Redireciona para a raiz (Dashboard)
                 header("Location: index.php");
             }
             exit;
@@ -381,7 +390,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </div>
 
 <script>
-    // Script simples para mostrar/ocultar senha
     function togglePassword(btn) {
         const wrapper = btn.closest('.password-wrapper');
         const input = wrapper.querySelector('.pwd-input');

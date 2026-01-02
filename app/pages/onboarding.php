@@ -27,7 +27,7 @@ if (isset($_GET['concluir']) && $_GET['concluir'] == '1') {
     $stmt->execute([$uid]);
     
     // 2. Redireciona para o MENU GERAL (Cadastros) como você pediu
-    // Usando a rota correta do index.php
+    // Usando a rota correta do index.php com o parâmetro pg
     header("Location: index.php?pg=cadastros");
     exit;
 }
@@ -312,9 +312,11 @@ if (isset($_GET['concluir']) && $_GET['concluir'] == '1') {
     }
 
     // Redireciona passando o parâmetro GET que o PHP lá em cima vai ler
+    // O JS apenas adiciona ?concluir=1 à URL atual (que é index.php?pg=onboarding)
     function finishTour() {
-        // Recarrega a página com ?concluir=1
-        window.location.href = '?concluir=1';
+        const currentUrl = new URL(window.location.href);
+        currentUrl.searchParams.set('concluir', '1');
+        window.location.href = currentUrl.toString();
     }
 
     // Efeito de Confetes
