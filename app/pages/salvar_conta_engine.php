@@ -33,56 +33,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // --- B. COLETA DE DADOS ---
         $contadescricao = trim($_POST['contadescricao']);
-        $contatipo = $_POST['contatipo'];
-        $categoriaid = $_POST['categoriaid'];
+        $contatipo      = $_POST['contatipo'];
+        $categoriaid    = $_POST['categoriaid'];
         $contavencimento = $_POST['contavencimento'];
         
-        $contafixa = isset($_POST['contafixa']) ? 1 : 0;
-        $manter_dados = $_POST['manter_dados'] ?? '0';
+        $contafixa      = isset($_POST['contafixa']) ? 1 : 0;
+        $manter_dados   = $_POST['manter_dados'] ?? '0';
 
-        // Cartão (Receita não tem cartão)
-        $cartoid = ($contatipo === 'Entrada') ? null : ($_POST['cartoid'] ?? null);
-        if (empty($cartoid)) $cartoid = null;
+        // Captura Robusta do Cartão
+        $cartoid = null;
+        if ($contatipo === 'Saída') {
+            if (isset($_POST['cartoid']) && $_POST['cartoid'] !== '') {
+                $cartoid = $_POST['cartoid'];
+            }
+        }
 
+        // Parcelas
         $parcelas_input = (int)($_POST['contaparcela_total'] ?? 1);
         if ($parcelas_input < 1) $parcelas_input = 1;
 
-        // --- C. LÓGICA DE REPETIÇÃO E VALOR ---
-        
+        // --- C. LÓGICA DE REPETIÇÃO ---
         $qtd_lancamentos = 1;
         $grupo_id = null; 
-
-        // O valor base é o digitado (se for parcela, já é o valor da parcela)
         $valor_final = $contavalor; 
 
         if ($contafixa == 1) {
-            // CENÁRIO 1: CONTA FIXA (Recorrente)
-            // Gera 12 meses com o mesmo valor
             $qtd_lancamentos = 12; 
             $grupo_id = uniqid('fix_');
-
         } elseif ($parcelas_input > 1) {
-            // CENÁRIO 2: PARCELADO (Cartão)
-            // Gera N parcelas. O valor digitado JÁ É O VALOR DA PARCELA.
             $qtd_lancamentos = $parcelas_input;
-            
-            // CORREÇÃO AQUI: NÃO DIVIDE MAIS O VALOR
-            // Antes: $valor_final = $contavalor / $parcelas_input;
-            // Agora: Mantém o valor digitado, pois ele representa "1x de..."
             $valor_final = $contavalor; 
-            
             $grupo_id = uniqid('parc_');
         }
 
         // --- D. PREPARAÇÃO DO BANCO ---
         $pdo->beginTransaction();
 
-        $dia_fechamento = 1;
-        if ($cartoid) {
-            $stmt_c = $pdo->prepare("SELECT cartofechamento FROM cartoes WHERE cartoid = ?");
+        // 1. BUSCA DADOS DO CARTÃO (FECHAMENTO E VENCIMENTO)
+        $dia_fechamento = 30; // Padrão seguro
+        $dia_vencimento = 10; // Padrão seguro
+        
+        if (!empty($cartoid)) {
+            $stmt_c = $pdo->prepare("SELECT cartofechamento, cartovencimento FROM cartoes WHERE cartoid = ?");
             $stmt_c->execute([$cartoid]);
             $res = $stmt_c->fetch();
-            if ($res) $dia_fechamento = (int)$res['cartofechamento'];
+            if ($res) {
+                $dia_fechamento = (int)$res['cartofechamento'];
+                $dia_vencimento = (int)$res['cartovencimento'];
+            }
         }
 
         // --- E. LOOP DE INSERÇÃO ---
@@ -90,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         for ($i = 1; $i <= $qtd_lancamentos; $i++) {
             
-            // 1. Data Vencimento
+            // Data da Parcela/Ocorrência
             $data_iteracao = clone $data_base;
             if ($i > 1) {
                 $data_iteracao->modify("+" . ($i - 1) . " months");
@@ -99,25 +97,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $vencimento_db = $data_iteracao->format('Y-m-d');
             $competencia_db = $data_iteracao->format('Y-m');
 
-            // 2. Data Fatura
+            // --- LÓGICA DE COMPETÊNCIA DA FATURA (CORRIGIDA) ---
             $fatura_db = null;
-            if ($cartoid) {
+            
+            if (!empty($cartoid)) {
                 $dia_compra = (int)$data_iteracao->format('d');
+                
+                // Objeto para manipular a data da fatura
                 $data_fatura_calc = clone $data_iteracao;
                 
+                // REGRA 1: Compra após o fechamento? Joga pro próximo mês.
                 if ($dia_compra >= $dia_fechamento) {
                     $data_fatura_calc->modify('first day of next month');
                 }
+
+                // REGRA 2 (NOVA): O cartão "vira" o mês? 
+                // Se o dia do vencimento for menor que o dia do fechamento (Ex: Vence dia 05, Fecha dia 25),
+                // significa que a fatura desse ciclo só é paga no mês seguinte.
+                if ($dia_vencimento < $dia_fechamento) {
+                    $data_fatura_calc->modify('first day of next month');
+                }
+
                 $fatura_db = $data_fatura_calc->format('Y-m');
+            } else {
+                // Sem cartão, a competência é o próprio mês
+                $fatura_db = $competencia_db; 
             }
 
-            // 3. Descrição
+            // Descrição
             $descricao_final = $contadescricao;
             if ($contafixa == 0 && $qtd_lancamentos > 1) {
                 $descricao_final .= " ($i/$qtd_lancamentos)";
             }
 
-            // 4. Inserção
             $p_num   = ($contafixa == 1) ? 1 : $i;
             $p_total = ($contafixa == 1) ? 1 : $qtd_lancamentos;
 

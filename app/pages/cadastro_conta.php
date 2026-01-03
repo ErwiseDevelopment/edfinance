@@ -5,14 +5,14 @@ if (!defined('APP_PATH')) exit;
 
 $uid = $_SESSION['usuarioid'];
 
-// Memória do Formulário (Mantido)
+// Memória do Formulário (Para quando volta de um erro ou "Salvar +")
 $tipo_pre = $_GET['tipo'] ?? 'Saída';
 $cat_pre  = $_GET['cat'] ?? '';
 $car_pre  = $_GET['car'] ?? '';
 $venc_pre = $_GET['venc'] ?? date('Y-m-d');
 $fixa_pre = $_GET['fixa'] ?? 0;
 
-// Consultas
+// Consultas de Categorias e Cartões
 $stmt_cat = $pdo->prepare("SELECT * FROM categorias WHERE usuarioid = ? ORDER BY categoriadescricao ASC");
 $stmt_cat->execute([$uid]);
 $categorias = $stmt_cat->fetchAll();
@@ -25,7 +25,6 @@ $cartoes = $stmt_cartoes->fetchAll();
 <link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
 
 <style>
-    /* Variáveis visuais */
     :root { --app-bg: #f8fafc; --app-card: #ffffff; --app-text-main: #1e293b; --app-text-muted: #94a3b8; }
     
     .app-container { max-width: 800px; margin: 0 auto; padding: 20px; }
@@ -52,17 +51,15 @@ $cartoes = $stmt_cartoes->fetchAll();
         background: #fff; color: #1e293b; box-shadow: 0 4px 15px rgba(0,0,0,0.08); 
     }
 
-    /* Estilo dos Inputs e Cards */
+    /* Cards e Inputs */
     .card-app { 
         background: var(--app-card); border-radius: 24px; padding: 30px; 
         box-shadow: 0 10px 40px -10px rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.02); height: 100%; 
     }
-    
     .label-app { 
         font-size: 0.75rem; font-weight: 800; color: #64748b; margin-bottom: 8px; 
         display: block; text-transform: uppercase; letter-spacing: 0.5px; 
     }
-    
     .input-app { 
         background-color: #f8fafc !important; border: 1px solid #e2e8f0 !important; 
         padding: 12px 16px !important; border-radius: 16px !important; 
@@ -94,7 +91,7 @@ $cartoes = $stmt_cartoes->fetchAll();
     .switch-container.active { border-color: #4361ee; background-color: #eff6ff; }
     .form-check-input { width: 3em; height: 1.5em; cursor: pointer; }
 
-    /* Botões Finais */
+    /* Botões de Ação */
     .action-buttons { display: flex; gap: 15px; margin-top: 30px; }
     .btn-confirm { 
         background: #1e293b; color: #fff; border-radius: 16px; padding: 16px; 
@@ -259,12 +256,9 @@ $cartoes = $stmt_cartoes->fetchAll();
 <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
 
 <script>
-    // --- JS MANTIDO ORIGINAL COM AJUSTE DE CAMINHOS ---
-    
-    // IMPORTANTE: Ajuste aqui se seus arquivos AJAX estiverem em outro lugar
-    // Como está rodando via index.php na pasta public, o caminho relativo geralmente é direto
-   const AJAX_META_URL = 'index.php?pg=ajax_check_meta'; 
-const AJAX_CAT_URL  = 'index.php?pg=ajax_rapido_categoria';
+    // Configurações e URLs
+    const AJAX_META_URL = 'index.php?pg=ajax_check_meta'; 
+    const AJAX_CAT_URL  = 'index.php?pg=ajax_rapido_categoria';
 
     let tomCategoria, tomCartao;
     const inputData = document.getElementById('contavencimento');
@@ -276,8 +270,12 @@ const AJAX_CAT_URL  = 'index.php?pg=ajax_rapido_categoria';
     const divParcelas = document.getElementById('containerParcelas');
     const formLancamento = document.getElementById('formLancamento');
 
-    // Validação
+    // --- CORREÇÃO PRINCIPAL: FORÇA O ENVIO DO VALOR DO TOMSELECT ---
     formLancamento.addEventListener('submit', function(e) {
+        // Sincroniza o valor visual do TomSelect com o <select> original oculto
+        if(tomCartao) tomCartao.sync();
+        if(tomCategoria) tomCategoria.sync();
+
         const catVal = tomCategoria ? tomCategoria.getValue() : document.getElementById('selectCategoria').value;
         if (!catVal) {
             e.preventDefault();
@@ -288,6 +286,7 @@ const AJAX_CAT_URL  = 'index.php?pg=ajax_rapido_categoria';
     });
 
     window.addEventListener('DOMContentLoaded', () => {
+        // Inicializa Select de Categoria
         if (document.getElementById('selectCategoria')) {
             tomCategoria = new TomSelect('#selectCategoria', {
                 create: false, sortField: { field: "text", direction: "asc" }, allowEmptyOption: true,
@@ -296,6 +295,7 @@ const AJAX_CAT_URL  = 'index.php?pg=ajax_rapido_categoria';
             filtrarCategorias();
         }
 
+        // Inicializa Select de Cartão
         if (document.getElementById('selectCartao')) {
             tomCartao = new TomSelect('#selectCartao', {
                 create: false, sortField: { field: "text", direction: "asc" }, allowEmptyOption: true,
@@ -326,35 +326,43 @@ const AJAX_CAT_URL  = 'index.php?pg=ajax_rapido_categoria';
         const cartaoId = tomCartao ? tomCartao.getValue() : '';
         const dataSelecionada = inputData.value;
 
+        // Se não tem cartão selecionado, limpa o feedback
         if (!cartaoId) {
             labelData.innerText = "Data de Vencimento";
             feedbackFatura.style.display = 'none';
             return;
         }
 
+        // Se tem cartão, a data refere-se à compra
         labelData.innerText = "Data da Compra";
         if (!dataSelecionada) return;
 
+        // Pega atributos do option selecionado (gambiarra necessária pois TomSelect esconde o original)
+        // Usamos o ID do select original para buscar os atributos de data
         const selectOriginal = document.getElementById('selectCartao');
         const optionSelecionada = selectOriginal.querySelector(`option[value="${cartaoId}"]`);
         
-        const diaFechamento = parseInt(optionSelecionada.getAttribute('data-fechamento')) || 1;
-        const diaVencimento = parseInt(optionSelecionada.getAttribute('data-vencimento')) || 1;
+        if (optionSelecionada) {
+            const diaFechamento = parseInt(optionSelecionada.getAttribute('data-fechamento')) || 1;
+            const diaVencimento = parseInt(optionSelecionada.getAttribute('data-vencimento')) || 1;
 
-        const dateObj = new Date(dataSelecionada + "T12:00:00");
-        const diaCompra = dateObj.getDate();
-        let dataFatura = new Date(dateObj);
-        dataFatura.setDate(1); 
+            const dateObj = new Date(dataSelecionada + "T12:00:00");
+            const diaCompra = dateObj.getDate();
+            let dataFatura = new Date(dateObj);
+            dataFatura.setDate(1); 
 
-        let mesesParaAdicionar = 0;
-        if (diaCompra >= diaFechamento) { mesesParaAdicionar = 1; }
-        if (diaVencimento < diaFechamento) { mesesParaAdicionar++; }
+            let mesesParaAdicionar = 0;
+            // Se comprou no dia do fechamento ou depois, vai pro próximo
+            if (diaCompra >= diaFechamento) { mesesParaAdicionar = 1; }
+            // Se o vencimento é menor que o fechamento (ex: fecha dia 25, vence dia 05 do proximo), adiciona mais um mes
+            if (diaVencimento < diaFechamento) { mesesParaAdicionar++; }
 
-        dataFatura.setMonth(dataFatura.getMonth() + mesesParaAdicionar);
+            dataFatura.setMonth(dataFatura.getMonth() + mesesParaAdicionar);
 
-        const nomeMes = dataFatura.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
-        feedbackFatura.innerHTML = `<span class="badge-fatura"><i class="bi bi-calendar-check"></i> Fatura Vence em: ${nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1)}</span>`;
-        feedbackFatura.style.display = 'block';
+            const nomeMes = dataFatura.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+            feedbackFatura.innerHTML = `<span class="badge-fatura"><i class="bi bi-calendar-check"></i> Fatura Vence em: ${nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1)}</span>`;
+            feedbackFatura.style.display = 'block';
+        }
     }
 
     function verificarMeta() {
@@ -405,6 +413,7 @@ const AJAX_CAT_URL  = 'index.php?pg=ajax_rapido_categoria';
         r.addEventListener('change', () => {
             const isEntrada = (r.value === 'Entrada');
             document.getElementById('divCartao').style.display = isEntrada ? 'none' : 'block';
+            // Se virar entrada, limpa o cartão
             if(isEntrada && tomCartao) { tomCartao.clear(); verificarPrevisaoFatura(); }
             filtrarCategorias();
             verificarMeta();
@@ -415,6 +424,7 @@ const AJAX_CAT_URL  = 'index.php?pg=ajax_rapido_categoria';
         if (!tomCategoria) return;
         const tipoSelecionado = document.querySelector('input[name="contatipo"]:checked').value;
         const valorAtual = tomCategoria.getValue();
+        // PHP gera JSON das categorias
         const categoriasJson = <?= json_encode(array_map(function($c) {
             return ['id' => $c['categoriaid'], 'text' => $c['categoriadescricao'], 'tipo' => ($c['categoriatipo'] == 'Receita') ? 'Entrada' : 'Saída'];
         }, $categorias)) ?>;
@@ -423,6 +433,7 @@ const AJAX_CAT_URL  = 'index.php?pg=ajax_rapido_categoria';
         categoriasJson.forEach(cat => {
             if (cat.tipo === tipoSelecionado) tomCategoria.addOption({value: cat.id, text: cat.text});
         });
+        // Mantém selecionado se ainda for válido
         const existe = categoriasJson.find(c => c.id == valorAtual && c.tipo == tipoSelecionado);
         if (existe) tomCategoria.setValue(valorAtual); else tomCategoria.clear();
         tomCategoria.refreshOptions(false);
