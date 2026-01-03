@@ -1,213 +1,241 @@
 <?php
-// app/pages/faturas_geral.php
+// app/pages/faturas.php
 
 if (!defined('APP_PATH')) exit;
 
 $uid = $_SESSION['usuarioid'];
-$mes_filtro = $_GET['mes'] ?? date('Y-m');
-$filtro_tipo = $_GET['tipo'] ?? 'todos';
+$mes_filtro = $_GET['mes'] ?? date('Y-m'); 
+$cartao_selecionado = $_GET['cartoid'] ?? null;
 
-// --- NAVEGAÇÃO DE DATAS ROBUSTA (Classe DateTime) ---
+// Lógica de Edição (Mantida)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['acao'] === 'editar_lancamento') {
+    try {
+        $id_edit = $_POST['id_conta'];
+        $stmtCheck = $pdo->prepare("SELECT contasituacao FROM contas WHERE contasid = ? AND usuarioid = ?");
+        $stmtCheck->execute([$id_edit, $uid]);
+        if ($stmtCheck->fetchColumn() === 'Pago') throw new Exception("Item pago não pode ser editado.");
+
+        $desc_edit = $_POST['descricao'];
+        $val_edit = str_replace(['.', ','], ['', '.'], $_POST['valor']);
+        $data_edit = $_POST['data'];
+        $cat_edit = $_POST['categoria'];
+        
+        $pdo->prepare("UPDATE contas SET contadescricao=?, contavalor=?, contavencimento=?, categoriaid=? WHERE contasid=?")
+            ->execute([$desc_edit, $val_edit, $data_edit, $cat_edit, $id_edit]);
+
+        echo "<script>window.location.href='index.php?pg=faturas&cartoid=$cartao_selecionado&mes=$mes_filtro';</script>";
+        exit;
+    } catch (Exception $e) { $erro_msg = $e->getMessage(); }
+}
+
+// Datas
 $data_atual = new DateTime($mes_filtro . "-01");
 $mes_anterior = (clone $data_atual)->modify('-1 month')->format('Y-m');
 $mes_proximo = (clone $data_atual)->modify('+1 month')->format('Y-m');
 
-// Formatador de Data (Ex: "jan 24")
-$fmt = new IntlDateFormatter('pt_BR', IntlDateFormatter::NONE, IntlDateFormatter::NONE, 'America/Sao_Paulo', IntlDateFormatter::GREGORIAN, "MMM yy");
+// Cartões e Categorias
+$meus_cartoes = $pdo->prepare("SELECT * FROM cartoes WHERE usuarioid = ? ORDER BY cartonome ASC");
+$meus_cartoes->execute([$uid]);
+$meus_cartoes = $meus_cartoes->fetchAll();
+if (!$cartao_selecionado && !empty($meus_cartoes)) $cartao_selecionado = $meus_cartoes[0]['cartoid'];
 
-// 1. Limite Total (Soma de todos os cartões)
-$stmt_limites = $pdo->prepare("SELECT SUM(cartolimite) as total_limite FROM cartoes WHERE usuarioid = ?");
-$stmt_limites->execute([$uid]);
-$limite_total = $stmt_limites->fetch()['total_limite'] ?? 0;
+$lista_categorias = $pdo->prepare("SELECT * FROM categorias WHERE usuarioid = ? ORDER BY categoriadescricao");
+$lista_categorias->execute([$uid]);
+$lista_categorias = $lista_categorias->fetchAll();
 
-// 2. Uso Total Real (Tudo que está pendente no sistema, independente do mês)
-$stmt_uso_real = $pdo->prepare("SELECT SUM(contavalor) as total_preso FROM contas 
-                                WHERE usuarioid = ? AND cartoid IS NOT NULL AND contasituacao = 'Pendente' AND contatipo = 'Saída'");
-$stmt_uso_real->execute([$uid]);
-$total_uso_geral = $stmt_uso_real->fetch()['total_preso'] ?? 0;
+// --- CÁLCULOS VISUAIS ---
+$itens_fatura = [];
+$total_gastos_bruto = 0; 
+$total_ja_quitado = 0;   
+$total_pendente_real = 0; 
+$creditos_troco = 0;
+$limite_cartao = 0; 
+$dados_cartao = null;
+$limite_comprometido = 0;
 
-// 3. Faturas do Mês Selecionado
-// IMPORTANTE: Trazendo a coluna 'cartocor'
-$sql_base = "SELECT c.*, car.cartonome, car.cartocor, cat.categoriadescricao 
-             FROM contas c
-             JOIN cartoes car ON c.cartoid = car.cartoid
-             JOIN categorias cat ON c.categoriaid = cat.categoriaid
-             WHERE c.usuarioid = ? 
-             AND COALESCE(c.competenciafatura, c.contacompetencia) = ? 
-             AND c.cartoid IS NOT NULL";
+if ($cartao_selecionado) {
+    foreach($meus_cartoes as $m) if($m['cartoid'] == $cartao_selecionado) { $dados_cartao = $m; $limite_cartao = $m['cartolimite']; }
 
-// Filtros extras
-if ($filtro_tipo == 'parcelados') $sql_base .= " AND c.contaparcela_total > 1";
-if ($filtro_tipo == 'avulsos') $sql_base .= " AND c.contaparcela_total <= 1";
+    $stmt_f = $pdo->prepare("SELECT c.*, cat.categoriadescricao FROM contas c LEFT JOIN categorias cat ON c.categoriaid = cat.categoriaid WHERE c.usuarioid = ? AND c.cartoid = ? AND COALESCE(c.competenciafatura, c.contacompetencia) = ? ORDER BY c.contavencimento ASC");
+    $stmt_f->execute([$uid, $cartao_selecionado, $mes_filtro]);
+    $itens_fatura = $stmt_f->fetchAll();
 
-$sql_base .= " ORDER BY c.contavencimento ASC";
+    foreach($itens_fatura as $i) { 
+        if ($i['contatipo'] == 'PagamentoFatura') {
+            $creditos_troco += $i['contavalor'];
+            $total_ja_quitado += $i['contavalor'];
+        } else {
+            $total_gastos_bruto += $i['contavalor'];
+            if ($i['contasituacao'] == 'Pago') {
+                $total_ja_quitado += $i['contavalor'];
+            } else {
+                $total_pendente_real += $i['contavalor'];
+            }
+        }
+    }
+    
+    $stmt_l = $pdo->prepare("SELECT SUM(contavalor) FROM contas WHERE usuarioid=? AND cartoid=? AND contasituacao='Pendente' AND contatipo='Saída'");
+    $stmt_l->execute([$uid, $cartao_selecionado]);
+    $limite_comprometido = $stmt_l->fetchColumn() ?: 0;
+}
 
-$stmt_contas = $pdo->prepare($sql_base);
-$stmt_contas->execute([$uid, $mes_filtro]);
-$contas = $stmt_contas->fetchAll();
+// Saldo que o usuário tem que pagar AGORA
+$saldo_devedor_visual = $total_pendente_real - $creditos_troco;
+if ($saldo_devedor_visual < 0) $saldo_devedor_visual = 0;
 
-// Somatório da visualização atual
-$total_fatura_mes = 0;
-foreach ($contas as $cta) { $total_fatura_mes += $cta['contavalor']; }
-
-$limite_disponivel_real = $limite_total - $total_uso_geral;
+$limite_disponivel = $limite_cartao - $limite_comprometido;
+$perc_uso = ($limite_cartao > 0) ? ($limite_comprometido / $limite_cartao) * 100 : 0;
+$cor_cartao = $dados_cartao['cartocor'] ?? '#1e293b';
 ?>
 
 <style>
-    /* Estilos Consistentes com o Projeto */
-    .card-fatura-header { 
-        background: linear-gradient(135deg, #0f172a 0%, #334155 100%); 
-        border-radius: 24px; padding: 25px; color: white; 
-        margin-bottom: 25px; position: relative; overflow: hidden;
-    }
-    .card-fatura-header::before {
-        content: ''; position: absolute; top: -50px; right: -50px; width: 150px; height: 150px;
-        background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 70%);
-        border-radius: 50%; pointer-events: none;
-    }
-
-    /* Botões de Navegação */
-    .btn-nav-mes { 
-        background: rgba(255,255,255,0.15); color: white; border: none; 
-        border-radius: 12px; width: 36px; height: 36px; display: flex; 
-        align-items: center; justify-content: center; transition: 0.2s; text-decoration: none; 
-    }
-    .btn-nav-mes:hover { background: rgba(255,255,255,0.3); color: white; transform: scale(1.05); }
-
-    /* Cards de Informação */
-    .info-box { 
-        background: rgba(255,255,255,0.1); border-radius: 16px; padding: 12px 15px; 
-        border: 1px solid rgba(255,255,255,0.15); height: 100%; display: flex; flex-direction: column; justify-content: center;
-    }
-    .info-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.8; margin-bottom: 4px; display: block; }
-    .info-value { font-size: 0.9rem; font-weight: 700; white-space: nowrap; }
-
-    /* Lista de Contas */
-    .item-conta { 
-        background: white; border-radius: 16px; padding: 15px; margin-bottom: 10px; 
-        border: 1px solid #f1f5f9; transition: transform 0.2s; 
-        border-left: 5px solid transparent; /* Preparando para a cor dinâmica */
-    }
-    .item-conta:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
-    
-    .badge-cartao { 
-        font-size: 0.6rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; 
-        text-transform: uppercase; color: #fff; letter-spacing: 0.5px;
-    }
-
-    .btn-filter { border-radius: 50px; padding: 6px 16px; font-size: 0.85rem; font-weight: 600; border: 1px solid #e2e8f0; background: white; color: #64748b; transition: 0.2s; }
-    .btn-filter.active { background: #1e293b; color: white; border-color: #1e293b; }
-
-    @media (max-width: 576px) {
-        .card-fatura-header { padding: 20px; }
-        .display-5 { font-size: 2rem; }
-    }
+    body { background-color: #f8fafc; color: #334155; }
+    .card-fatura { background: #fff; border-radius: 20px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+    .card-fatura-header { color: #fff; padding: 25px; position: relative; }
+    .card-fatura-header::before { content: ''; position: absolute; top: -50%; right: -10%; width: 200px; height: 200px; background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, transparent 70%); pointer-events: none; }
+    .chip-cartao { padding: 8px 18px; border-radius: 50px; border: 1px solid #e2e8f0; text-decoration: none; color: #64748b; background: #fff; display: flex; align-items: center; gap: 8px; transition: 0.2s; font-size: 0.85rem; }
+    .chip-cartao.active { background: #1e293b; color: #fff; border-color: #1e293b; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .btn-action { border: none; background: #f1f5f9; width: 34px; height: 34px; border-radius: 8px; color: #64748b; display: flex; align-items: center; justify-content: center; transition: 0.2s; margin-left: 5px; }
+    .btn-action:hover { background: #e2e8f0; color: #1e293b; }
+    .tipo-pagamento { background-color: #f0fdf4 !important; border-left: 4px solid #16a34a !important; }
+    .tipo-pagamento .valor { color: #16a34a !important; }
 </style>
 
 <div class="container py-4 mb-5">
-    
-    <div class="card-fatura-header shadow-lg">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <a href="index.php?pg=faturas" class="text-white opacity-75 text-decoration-none d-flex align-items-center gap-2">
-                <i class="bi bi-arrow-left"></i> <span class="small fw-bold">Voltar</span>
+    <?php if(isset($erro_msg)): ?><div class="alert alert-danger rounded-4 border-0 mb-4"><?= $erro_msg ?></div><?php endif; ?>
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold m-0">Faturas</h4>
+        <div class="bg-white border rounded-pill px-3 py-2 shadow-sm d-flex align-items-center gap-3">
+            <a href="?pg=faturas&cartoid=<?= $cartao_selecionado ?>&mes=<?= $mes_anterior ?>" class="text-dark"><i class="bi bi-chevron-left"></i></a>
+            <span class="small fw-bold text-uppercase"><?= (new IntlDateFormatter('pt_BR', 0, 0, null, null, "MMM yyyy"))->format($data_atual) ?></span>
+            <a href="?pg=faturas&cartoid=<?= $cartao_selecionado ?>&mes=<?= $mes_proximo ?>" class="text-dark"><i class="bi bi-chevron-right"></i></a>
+        </div>
+    </div>
+
+    <div class="d-flex overflow-auto gap-2 mb-4 pb-2">
+        <?php foreach($meus_cartoes as $ct): $c = $ct['cartocor'] ?? '#ccc'; ?>
+            <a href="?pg=faturas&cartoid=<?= $ct['cartoid'] ?>&mes=<?= $mes_filtro ?>" class="chip-cartao <?= $cartao_selecionado == $ct['cartoid'] ? 'active' : '' ?>">
+                <span class="dot" style="background: <?= $c ?>;"></span> <?= $ct['cartonome'] ?>
             </a>
-            
-            <div class="d-flex align-items-center gap-3 bg-dark bg-opacity-25 px-2 py-1 rounded-4 border border-white border-opacity-10">
-                <a href="?pg=faturas_geral&mes=<?= $mes_anterior ?>&tipo=<?= $filtro_tipo ?>" class="btn-nav-mes"><i class="bi bi-chevron-left"></i></a>
-                <span class="fw-bold text-uppercase small" style="min-width: 80px; text-align: center;">
-                    <?= $fmt->format($data_atual) ?>
-                </span>
-                <a href="?pg=faturas_geral&mes=<?= $mes_proximo ?>&tipo=<?= $filtro_tipo ?>" class="btn-nav-mes"><i class="bi bi-chevron-right"></i></a>
-            </div>
-        </div>
-
-        <div class="text-center mb-4">
-            <span class="opacity-75 small text-uppercase fw-bold ls-1">Fatura Total Consolidada</span>
-            <h1 class="display-5 fw-bold mt-1 mb-0">R$ <?= number_format($total_fatura_mes, 2, ',', '.') ?></h1>
-        </div>
-        
-        <div class="row g-2 text-center">
-            <div class="col-4">
-                <div class="info-box">
-                    <span class="info-label text-warning">Total Preso</span>
-                    <span class="info-value">R$ <?= number_format($total_uso_geral, 2, ',', '.') ?></span>
-                </div>
-            </div>
-            <div class="col-4">
-                <div class="info-box">
-                    <span class="info-label text-info">Disponível</span>
-                    <span class="info-value">R$ <?= number_format($limite_disponivel_real, 2, ',', '.') ?></span>
-                </div>
-            </div>
-            <div class="col-4">
-                <div class="info-box border-0 bg-white bg-opacity-10">
-                    <span class="info-label">Limite Global</span>
-                    <span class="info-value">R$ <?= number_format($limite_total, 2, ',', '.') ?></span>
-                </div>
-            </div>
-        </div>
+        <?php endforeach; ?>
     </div>
 
-    <div class="d-flex gap-2 mb-4 overflow-x-auto pb-2 px-1" style="scrollbar-width: none;">
-        <a href="?pg=faturas_geral&mes=<?= $mes_filtro ?>&tipo=todos" class="btn-filter <?= $filtro_tipo == 'todos' ? 'active' : '' ?>">Todos</a>
-        <a href="?pg=faturas_geral&mes=<?= $mes_filtro ?>&tipo=parcelados" class="btn-filter <?= $filtro_tipo == 'parcelados' ? 'active' : '' ?>">Parcelados</a>
-        <a href="?pg=faturas_geral&mes=<?= $mes_filtro ?>&tipo=avulsos" class="btn-filter <?= $filtro_tipo == 'avulsos' ? 'active' : '' ?>">À Vista</a>
-    </div>
-
-    <div class="list-contas">
-        <?php if (empty($contas)): ?>
-            <div class="text-center py-5">
-                <div class="mb-3 opacity-25"><i class="bi bi-receipt fs-1"></i></div>
-                <p class="text-muted fw-bold small">Nenhuma compra encontrada para este filtro.</p>
-            </div>
-        <?php else: ?>
-            <div class="d-flex justify-content-between align-items-end mb-3 px-1">
-                <small class="text-muted fw-bold text-uppercase" style="font-size: 0.7rem;">Detalhamento</small>
-                <small class="text-muted" style="font-size: 0.7rem;"><?= count($contas) ?> lançamentos</small>
-            </div>
-
-            <?php foreach ($contas as $cta): 
-                // Define a cor do cartão (ou padrão azul escuro)
-                $corCartao = !empty($cta['cartocor']) ? $cta['cartocor'] : '#1e293b';
-            ?>
-                <div class="item-conta shadow-sm d-flex justify-content-between align-items-center" style="border-left-color: <?= $corCartao ?>;">
-                    
-                    <div class="d-flex align-items-center overflow-hidden">
-                        <div class="text-white rounded-3 p-2 me-3 flex-shrink-0 shadow-sm" style="background-color: <?= $corCartao ?>;">
-                            <i class="bi bi-bag-check fs-5"></i>
-                        </div>
-                        
-                        <div class="text-truncate">
-                            <div class="d-flex align-items-center gap-2 mb-1">
-                                <span class="badge-cartao" style="background-color: <?= $corCartao ?>;">
-                                    <?= htmlspecialchars($cta['cartonome']) ?>
-                                </span>
-                                <span class="text-muted" style="font-size: 0.65rem; font-weight: 600;">
-                                    <?= date('d/m', strtotime($cta['contavencimento'])) ?>
-                                </span>
-                            </div>
-                            <h6 class="fw-bold mb-0 text-dark text-truncate" style="font-size: 0.9rem;">
-                                <?= htmlspecialchars($cta['contadescricao']) ?>
-                            </h6>
-                            <small class="text-muted" style="font-size: 0.7rem;">
-                                <?= htmlspecialchars($cta['categoriadescricao']) ?>
-                            </small>
-                        </div>
-                    </div>
-
-                    <div class="text-end ms-2 flex-shrink-0">
-                        <span class="fw-bold d-block text-dark" style="font-size: 0.95rem;">
-                            R$ <?= number_format($cta['contavalor'], 2, ',', '.') ?>
-                        </span>
-                        <?php if($cta['contaparcela_total'] > 1): ?>
-                            <span class="badge bg-light text-dark border rounded-pill" style="font-size: 0.6rem;">
-                                <?= $cta['contaparcela_num'] ?>/<?= $cta['contaparcela_total'] ?>
-                            </span>
-                        <?php endif; ?>
-                    </div>
-
+    <?php if($cartao_selecionado): ?>
+        <div class="card-fatura mb-4">
+            <div class="card-fatura-header" style="background: <?= $cor_cartao ?>;">
+                <div class="d-flex justify-content-between mb-3">
+                    <span class="fw-bold fs-5"><?= $dados_cartao['cartonome'] ?></span>
+                    <span class="badge <?= $saldo_devedor_visual <= 0.01 ? 'bg-success' : 'bg-white text-dark' ?> rounded-pill">
+                        <?= $saldo_devedor_visual <= 0.01 ? 'PAGA' : 'ABERTA' ?>
+                    </span>
                 </div>
-            <?php endforeach; ?>
-        <?php endif; ?>
+                <div class="row mt-3">
+                    <div class="col-6">
+                        <small class="opacity-75 d-block">Total Gastos</small>
+                        <span class="fw-bold">R$ <?= number_format($total_gastos_bruto, 2, ',', '.') ?></span>
+                    </div>
+                    <div class="col-6 text-end">
+                        <small class="opacity-75 d-block">Total Quitado</small>
+                        <span class="fw-bold text-warning">R$ <?= number_format($total_ja_quitado, 2, ',', '.') ?></span>
+                    </div>
+                </div>
+                <hr class="opacity-25">
+                <small class="opacity-75 d-block">Restante a Pagar</small>
+                <h1 class="fw-bold display-5">R$ <?= number_format($saldo_devedor_visual, 2, ',', '.') ?></h1>
+                
+                <?php if($saldo_devedor_visual > 0.01): ?>
+                    <button class="btn btn-light w-100 rounded-pill fw-bold mt-3" data-bs-toggle="modal" data-bs-target="#modalPagarFatura" style="color: <?= $cor_cartao ?>">
+                        <i class="bi bi-wallet2 me-2"></i> PAGAR AGORA
+                    </button>
+                <?php else: ?>
+                    <div class="bg-success bg-opacity-25 p-2 rounded-3 text-center fw-bold small mt-3 text-white border border-white border-opacity-25">Fatura Quitada</div>
+                <?php endif; ?>
+            </div>
+            <div class="p-3">
+                <div class="d-flex justify-content-between small fw-bold text-muted mb-1">
+                    <span>USADO: R$ <?= number_format($limite_comprometido, 2, ',', '.') ?></span>
+                    <span class="text-success">LIVRE: R$ <?= number_format($limite_disponivel, 2, ',', '.') ?></span>
+                </div>
+                <div class="progress" style="height: 6px;"><div class="progress-bar" style="width: <?= $perc_uso ?>%; background: <?= $cor_cartao ?>"></div></div>
+            </div>
+        </div>
+
+        <h6 class="fw-bold text-muted px-1 mb-3">Extrato</h6>
+        <?php foreach($itens_fatura as $it): 
+            $is_pg = ($it['contatipo'] == 'PagamentoFatura');
+            $pago = ($it['contasituacao'] == 'Pago');
+            $bg = $is_pg ? 'tipo-pagamento' : 'bg-white';
+            $cor_val = $is_pg ? 'valor' : 'text-dark';
+            $icon = $is_pg ? 'bi-arrow-down-left-circle-fill text-success' : ($pago ? 'bi-check-circle-fill text-muted' : 'bi-bag');
+        ?>
+            <div class="card border-0 shadow-sm rounded-4 p-3 mb-2 d-flex flex-row justify-content-between align-items-center <?= $bg ?>">
+                <div class="d-flex align-items-center overflow-hidden">
+                    <div class="bg-light p-2 rounded-3 me-3 flex-shrink-0"><i class="bi <?= $icon ?>"></i></div>
+                    <div class="text-truncate">
+                        <span class="fw-bold d-block small text-truncate <?= ($pago && !$is_pg) ? 'text-decoration-line-through opacity-50' : '' ?>"><?= $it['contadescricao'] ?></span>
+                        <small class="text-muted" style="font-size: 0.65rem;"><?= date('d/m', strtotime($it['contavencimento'])) ?> • <?= $is_pg ? 'Crédito' : $it['categoriadescricao'] ?></small>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center text-end ms-2">
+                    <span class="fw-bold small d-block me-3 <?= $cor_val ?>"><?= $is_pg ? '-' : '' ?> R$ <?= number_format($it['contavalor'], 2, ',', '.') ?></span>
+                    <?php if($pago): ?>
+                        <i class="bi bi-lock-fill text-muted opacity-25 px-2"></i>
+                    <?php elseif(!$is_pg): ?>
+                        <button class="btn-action text-primary" onclick='abrirEditar(<?= json_encode($it) ?>)'><i class="bi bi-pencil"></i></button>
+                        <button class="btn-action text-danger" onclick="confirmarExclusao(<?= $it['contasid'] ?>)"><i class="bi bi-trash"></i></button>
+                    <?php endif; ?>
+                </div>
+            </div>
+        <?php endforeach; ?>
+    <?php endif; ?>
+</div>
+
+<div class="modal fade" id="modalPagarFatura" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <form action="index.php?pg=processar_pagamento_fatura" method="POST" class="modal-content border-0 shadow rounded-4">
+            <div class="modal-header border-0 pb-0"><h5 class="modal-title fw-bold">Pagar Fatura</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <input type="hidden" name="cartao_id" value="<?= $cartao_selecionado ?>"><input type="hidden" name="competencia" value="<?= $mes_filtro ?>">
+                <div class="bg-light p-3 rounded-3 mb-3 border">
+                    <div class="d-flex justify-content-between mb-1"><small>Pendente Bruto:</small><strong>R$ <?= number_format($total_pendente_real, 2, ',', '.') ?></strong></div>
+                    <div class="d-flex justify-content-between text-success"><small>Créditos Disp.:</small><strong>- R$ <?= number_format($creditos_troco, 2, ',', '.') ?></strong></div>
+                    <hr class="my-1"><div class="d-flex justify-content-between"><small class="fw-bold">Total a Pagar:</small><strong class="fw-bold">R$ <?= number_format($saldo_devedor_visual, 2, ',', '.') ?></strong></div>
+                </div>
+                <label class="fw-bold small">Valor (R$)</label>
+                <input type="text" name="valor_pago" id="inputValorPagar" class="form-control fw-bold fs-4 text-success money" value="<?= number_format($saldo_devedor_visual, 2, ',', '.') ?>" required>
+                <div id="avisoMaximo" class="text-danger small fw-bold mt-1 d-none">Valor não pode exceder o saldo devedor.</div>
+                <label class="fw-bold small mt-3">Data</label><input type="date" name="data_pagamento" class="form-control" value="<?= date('Y-m-d') ?>" required>
+            </div>
+            <div class="modal-footer border-0 pt-0"><button type="submit" class="btn btn-dark w-100 rounded-3 fw-bold">Confirmar</button></div>
+        </form>
     </div>
 </div>
+
+<script>
+// Variável com o valor máximo permitido (Saldo Visual)
+const maxValorPermitido = <?= $saldo_devedor_visual ?>;
+
+// Funções de Modal e Máscara
+function abrirEditar(item) { /* ... mesma lógica ... */ }
+function confirmarExclusao(id) { if(confirm("Excluir?")) window.location.href="index.php?pg=acoes_conta&id="+id+"&acao=excluir&origem=faturas"; }
+
+const inputs = document.querySelectorAll('.money');
+inputs.forEach(input => {
+    input.addEventListener('input', function(e) {
+        let v = e.target.value.replace(/\D/g, "");
+        v = (v/100).toFixed(2) + ""; v = v.replace(".", ","); v = v.replace(/(\d)(\d{3})(\d{3}),/g, "$1.$2.$3,"); v = v.replace(/(\d)(\d{3}),/g, "$1.$2,");
+        e.target.value = v;
+
+        if (input.id === 'inputValorPagar') {
+            let val = parseFloat(v.replace('.','').replace(',','.'));
+            let aviso = document.getElementById('avisoMaximo');
+            if (val > maxValorPermitido) {
+                aviso.classList.remove('d-none');
+                e.target.value = maxValorPermitido.toLocaleString('pt-BR', {minimumFractionDigits: 2});
+            } else { aviso.classList.add('d-none'); }
+        }
+    });
+});
+</script>

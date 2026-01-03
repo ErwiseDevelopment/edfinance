@@ -1,11 +1,8 @@
 <?php
 // app/pages/login.php
 
-// Correção do Caminho: Usa __DIR__ para garantir que encontre o arquivo config
-// __DIR__ é a pasta atual (app/pages). Voltamos uma (..) para app, e entramos em config.
 require_once __DIR__ . "/../config/database.php";
 
-// Verifica se a sessão já não foi iniciada pelo index.php antes de iniciar
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -37,13 +34,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $erro = "Este e-mail já está em uso.";
             } else {
                 $hash = password_hash($senha, PASSWORD_DEFAULT);
-                // Define primeiro acesso como 1 (se você tiver essa coluna)
-                // Usamos try-catch para evitar erro fatal se a coluna não existir ainda no banco
                 try {
                     $sql = $pdo->prepare("INSERT INTO usuarios (usuarionome, usuarioemail, usuariosenha, usuario_primeiro_acesso) VALUES (?, ?, ?, 1)");
                     $executou = $sql->execute([$nome, $email, $hash]);
                 } catch (Exception $e) {
-                    // Fallback para tabela antiga sem a coluna usuario_primeiro_acesso
                     $sql = $pdo->prepare("INSERT INTO usuarios (usuarionome, usuarioemail, usuariosenha) VALUES (?, ?, ?)");
                     $executou = $sql->execute([$nome, $email, $hash]);
                 }
@@ -63,18 +57,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user = $sql->fetch();
 
         if ($user && password_verify($senha, $user['usuariosenha'])) {
+            // 1. Salva Sessão
             $_SESSION['usuarioid'] = $user['usuarioid'];
             $_SESSION['usuarioemail'] = $user['usuarioemail'];
             $_SESSION['usuarionome'] = $user['usuarionome'];
             
-            // Verifica primeiro acesso
+            // 2. RODA AS AUTOMAÇÕES (CRONS) AQUI
+            // Como o usuário acabou de logar, é o momento perfeito para verificar
+            
+            // A. Verifica Assinaturas (Gera contas recorrentes)
+            if (file_exists(__DIR__ . '/../cron/cron_assinaturas.php')) {
+                include __DIR__ . '/../cron/cron_assinaturas.php';
+            }
+
+                       
+            // 3. Redirecionamento
             $primeiro_acesso = $user['usuario_primeiro_acesso'] ?? 0;
 
             if ($primeiro_acesso == 1) {
-                // CORREÇÃO: Redireciona para o index com parâmetro pg=onboarding
                 header("Location: index.php?pg=onboarding");
             } else {
-                // CORREÇÃO: Redireciona para a raiz (Dashboard)
                 header("Location: index.php");
             }
             exit;
@@ -83,8 +85,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
-// ADICIONE ISSO: Roda a verificação de assinaturas
-include __DIR__ . '/../cron/cron_assinaturas.php';
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
